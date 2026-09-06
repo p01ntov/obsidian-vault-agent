@@ -1,0 +1,689 @@
+/* ============================================================
+   Vault Agent – Plugin Styles
+   Works in both Obsidian light and dark themes.
+   ============================================================ */
+
+/* ── Layout ─────────────────────────────────────────────── */
+.vault-agent-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  font-size: var(--font-ui-small);
+  background-color: var(--background-primary);
+}
+
+/* ── Header ─────────────────────────────────────────────── */
+.va-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  flex-shrink: 0;
+  min-height: 36px;
+}
+
+.va-title {
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+  color: var(--text-normal);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Scroll area with a centred column ──────────────────── */
+.va-scroll {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+}
+
+.va-model-empty {
+  font-size: var(--font-ui-small);
+  color: var(--text-error);
+}
+
+.va-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: var(--radius-s);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  min-width: 28px;
+  min-height: 28px;
+}
+
+.va-icon-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* ── Messages ────────────────────────────────────────────── */
+.va-messages {
+  width: 100%;
+  max-width: 740px;
+  padding: 16px 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* ── Empty state ─────────────────────────────────────────── */
+.va-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1;
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--text-muted);
+}
+
+.va-empty-title {
+  font-size: var(--font-ui-medium);
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.va-empty-sub {
+  font-size: var(--font-ui-small);
+  max-width: 260px;
+  line-height: 1.5;
+}
+
+/* ── Message bubbles ─────────────────────────────────────── */
+.va-msg {
+  display: flex;
+  max-width: 100%;
+}
+
+.va-msg-user {
+  justify-content: flex-end;
+}
+
+.va-msg-assistant {
+  justify-content: flex-start;
+}
+
+.va-msg-body {
+  line-height: 1.6;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* User: rounded bubble on the right, like a chat app */
+.va-msg-user .va-msg-body {
+  max-width: 80%;
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  border-radius: 18px;
+  padding: 9px 14px;
+}
+
+/* Assistant: plain text on the page, no bubble */
+.va-msg-assistant .va-msg-body {
+  max-width: 100%;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-normal);
+}
+
+/* ── Thinking indicator ──────────────────────────────────── */
+.va-thinking {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: var(--font-ui-small);
+  animation: va-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes va-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ── Text content (markdown rendered) ───────────────────── */
+.va-text {
+  font-size: var(--font-ui-small);
+}
+
+.va-text p {
+  margin: 0 0 6px;
+}
+
+.va-text p:last-child {
+  margin-bottom: 0;
+}
+
+.va-text ul,
+.va-text ol {
+  margin: 4px 0 4px 20px;
+  padding: 0;
+}
+
+.va-text li {
+  margin: 2px 0;
+}
+
+.va-text code {
+  background: var(--code-background);
+  border-radius: var(--radius-s);
+  padding: 1px 5px;
+  font-size: 0.9em;
+}
+
+.va-text pre {
+  background: var(--code-background);
+  border-radius: var(--radius-m);
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-size: 0.85em;
+  margin: 6px 0;
+}
+
+.va-text pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+.va-text blockquote {
+  border-left: 3px solid var(--interactive-accent);
+  margin: 4px 0;
+  padding-left: 10px;
+  color: var(--text-muted);
+}
+
+.va-text h1, .va-text h2, .va-text h3 {
+  margin: 10px 0 4px;
+  line-height: 1.3;
+}
+
+.va-text a {
+  color: var(--link-color);
+}
+
+/* ── Reasoning collapsible ───────────────────────────────── */
+.va-reasoning {
+  margin-top: 4px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.va-reasoning summary {
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 0;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.va-reasoning summary::-webkit-details-marker {
+  display: none;
+}
+
+.va-reasoning summary::before {
+  content: "▶";
+  font-size: 9px;
+  transition: transform 120ms ease;
+}
+
+.va-reasoning[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.va-reasoning-body {
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: var(--background-primary);
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  white-space: pre-wrap;
+  font-family: var(--font-monospace);
+  font-size: 0.85em;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* ── Tool rows ───────────────────────────────────────────── */
+.va-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+.va-tool {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: var(--radius-s);
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  font-size: var(--font-ui-smaller);
+  min-height: 26px;
+}
+
+.va-tool-running {
+  border-color: var(--color-yellow);
+  background: color-mix(in srgb, var(--color-yellow) 8%, var(--background-primary));
+}
+
+.va-tool-error {
+  border-color: var(--color-red);
+  background: color-mix(in srgb, var(--color-red) 8%, var(--background-primary));
+}
+
+.va-tool-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  width: 14px;
+}
+
+.va-tool-running .va-tool-icon {
+  color: var(--color-yellow);
+  animation: va-spin 1s linear infinite;
+}
+
+@keyframes va-spin {
+  to { transform: rotate(360deg); }
+}
+
+.va-tool-error .va-tool-icon {
+  color: var(--color-red);
+}
+
+.va-tool-name {
+  font-weight: 600;
+  color: var(--text-normal);
+  flex-shrink: 0;
+}
+
+.va-tool-args {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.va-tool-out {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-monospace);
+}
+
+/* ── Error block ─────────────────────────────────────────── */
+.va-error {
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: var(--radius-m);
+  border: 1px solid var(--color-red);
+  background: color-mix(in srgb, var(--color-red) 8%, var(--background-primary));
+}
+
+.va-error-title {
+  font-weight: 700;
+  color: var(--color-red);
+  display: block;
+  margin-bottom: 3px;
+}
+
+.va-error-body {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ── Confirm dialog ──────────────────────────────────────── */
+.va-confirm {
+  padding: 8px 10px;
+  border-radius: var(--radius-m);
+  border: 1px solid var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-primary));
+  margin-top: 4px;
+}
+
+.va-confirm-text {
+  font-size: var(--font-ui-small);
+  margin-bottom: 8px;
+  color: var(--text-normal);
+}
+
+.va-confirm-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.va-confirm-btns button {
+  min-height: 30px;
+  padding: 4px 14px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  cursor: pointer;
+  font-size: var(--font-ui-small);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+}
+
+.va-confirm-btns button.mod-cta {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+.va-confirm-btns button:hover {
+  filter: brightness(1.1);
+}
+
+.va-confirm-done {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ── Composer ────────────────────────────────────────────── */
+.va-composer-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 8px 12px 12px;
+  flex-shrink: 0;
+  background: var(--background-primary);
+}
+
+/* One rounded card holding the field and the toolbar */
+.va-composer {
+  width: 100%;
+  max-width: 740px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 8px 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 22px;
+  background: var(--background-secondary);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.va-composer:focus-within {
+  border-color: var(--background-modifier-border-hover);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+
+/* ── Attachments ─────────────────────────────────────────── */
+.va-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.va-attachment {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-s);
+  overflow: hidden;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+
+.va-attachment-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.va-attachment-x {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--background-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.va-attachment-x:hover {
+  opacity: 1;
+  color: var(--text-error);
+}
+
+/* Images inside a sent message */
+.va-msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.va-msg-image {
+  max-width: 160px;
+  max-height: 160px;
+  border-radius: var(--radius-s);
+  display: block;
+}
+
+/* ── Toolbar chips (attach / folder / model / thinking) ──── */
+.va-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.va-toolbar-spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+.va-chip {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--background-modifier-border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+  max-width: 180px;
+  min-height: 28px;
+  box-shadow: none;
+}
+
+.va-chip:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.va-chip-icon {
+  padding: 3px 7px;
+  min-width: 30px;
+  justify-content: center;
+}
+
+.va-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.va-chip-caret {
+  display: flex;
+  align-items: center;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.va-chip-icon-inline {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.va-chip-active {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+}
+
+.va-chip-warn {
+  border-color: var(--color-red);
+  color: var(--color-red);
+}
+
+.va-input {
+  width: 100%;
+  resize: none;
+  border: none;
+  border-radius: 0;
+  padding: 6px 8px 2px;
+  font-size: var(--font-ui-small);
+  line-height: 1.5;
+  background: transparent;
+  color: var(--text-normal);
+  font-family: var(--font-interface);
+  min-height: 28px;
+  max-height: 200px;
+  outline: none;
+}
+
+.va-input:focus {
+  outline: none;
+  border: none;
+  box-shadow: none;
+}
+
+.va-input::placeholder {
+  color: var(--text-faint);
+}
+
+.va-send {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  border-radius: 50%;
+  border: none;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 120ms ease, transform 80ms ease;
+}
+
+.va-send:hover {
+  background: var(--interactive-accent-hover);
+}
+
+.va-send:active {
+  transform: scale(0.93);
+}
+
+.va-send-stop {
+  background: var(--color-red);
+}
+
+.va-send-stop:hover {
+  background: color-mix(in srgb, var(--color-red) 85%, black);
+}
+
+/* ── Settings textarea ───────────────────────────────────── */
+.va-settings-textarea {
+  width: 100%;
+  min-height: 140px;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+}
+
+/* ── Provider box ────────────────────────────────────────── */
+.va-provider-box {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  padding: 4px 10px 10px;
+  margin-bottom: 14px;
+  background: var(--background-secondary);
+}
+
+/* ── Settings – folder scope ─────────────────────────────── */
+.va-scope-empty {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 4px 0 8px;
+}
+
+.va-scope-row .setting-item-name {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+}
+
+/* ── Mobile tweaks ───────────────────────────────────────── */
+@media (max-width: 480px) {
+  .va-messages {
+    padding: 12px 12px 8px;
+    gap: 14px;
+  }
+
+  .va-msg-user .va-msg-body {
+    max-width: 88%;
+  }
+
+  .va-composer-wrap {
+    padding: 6px 8px 10px;
+  }
+
+  .va-send {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+  }
+
+  .va-chip {
+    min-height: 32px;
+  }
+
+  .va-input {
+    font-size: 16px; /* prevents iOS auto-zoom */
+  }
+
+  .va-confirm-btns button {
+    min-height: 44px;
+    padding: 8px 16px;
+  }
+}
