@@ -1,19 +1,24 @@
 {
-  "name": "obsidian-vault-agent",
-  "version": "1.0.0",
-  "description": "Chat with any OpenAI-compatible model inside your vault, with tools that read and write notes. Works on desktop and mobile.",
-  "main": "main.js",
-  "scripts": {
-    "dev": "node esbuild.config.mjs",
-    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
-  },
-  "keywords": ["obsidian", "plugin", "ai", "llm"],
-  "license": "MIT",
-  "devDependencies": {
-    "@types/node": "20.14.10",
-    "builtin-modules": "3.3.0",
-    "esbuild": "0.21.5",
-    "obsidian": "1.7.2",
-    "typescript": "5.5.3"
-  }
+	"name": "obsidian-vault-agent",
+	"version": "1.1.0",
+	"description": "Chat with any OpenAI-compatible model inside your vault, with tools that read and write notes. Works on desktop and mobile.",
+	"main": "main.js",
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
+	},
+	"keywords": [
+		"obsidian",
+		"plugin",
+		"ai",
+		"llm"
+	],
+	"license": "MIT",
+	"devDependencies": {
+		"@types/node": "20.14.10",
+		"builtin-modules": "3.3.0",
+		"esbuild": "0.21.5",
+		"obsidian": "1.7.2",
+		"typescript": "5.5.3"
+	}
 }
