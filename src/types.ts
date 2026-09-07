@@ -49,6 +49,9 @@ export interface VaultAgentSettings {
 	/** Save conversations as notes in the vault so they sync between devices. */
 	saveChats: boolean;
 	chatFolder: string;
+	/** Agent memory: notes it writes to remember things across sessions. */
+	memoryFolder: string;
+	memoryPromptLimit: number;
 	syncSettingsNote: boolean;
 	syncSettingsNotePath: string;
 	debug: boolean;
@@ -78,6 +81,8 @@ export const DEFAULT_SETTINGS: VaultAgentSettings = {
 	writeScope: { folders: [], restrictReads: false },
 	saveChats: true,
 	chatFolder: "vault-agent/chats",
+	memoryFolder: "vault-agent/memory",
+	memoryPromptLimit: 20,
 	syncSettingsNote: false,
 	syncSettingsNotePath: "vault-agent/config.md",
 	debug: false,

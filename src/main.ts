@@ -38,6 +38,9 @@ export default class VaultAgentPlugin extends Plugin {
 
 		this.addSettingTab(new VaultAgentSettingTab(this.app, this));
 
+		/* Ensure the memory folder exists so the tools work from the first message. */
+		this.app.workspace.onLayoutReady(() => void this.ensureFolder(this.settings.memoryFolder));
+
 		/* Import settings from note on startup if sync is enabled */
 		if (this.settings.syncSettingsNote) {
 			this.app.workspace.onLayoutReady(() => this.importSettingsNote());
@@ -64,6 +67,8 @@ export default class VaultAgentPlugin extends Plugin {
 		if (!this.settings.reasoningEffort) this.settings.reasoningEffort = "off";
 		if (typeof this.settings.saveChats !== "boolean") this.settings.saveChats = true;
 		if (!this.settings.chatFolder) this.settings.chatFolder = "vault-agent/chats";
+		if (!this.settings.memoryFolder) this.settings.memoryFolder = "vault-agent/memory";
+		if (!this.settings.memoryPromptLimit) this.settings.memoryPromptLimit = 20;
 	}
 
 	async saveSettings() {
@@ -153,6 +158,15 @@ export default class VaultAgentPlugin extends Plugin {
 		} catch (e) {
 			console.warn("[VaultAgent] importSettingsNote failed:", e);
 			return false;
+		}
+	}
+
+	private async ensureFolder(path: string): Promise<void> {
+		if (this.app.vault.getAbstractFileByPath(normalizePath(path)) !== null) return;
+		try {
+			await this.app.vault.createFolder(normalizePath(path));
+		} catch {
+			/* already created */
 		}
 	}
 }

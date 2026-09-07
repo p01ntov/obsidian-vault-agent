@@ -129,6 +129,41 @@ export class VaultAgentSettingTab extends PluginSettingTab {
 				);
 		}
 
+		/* ---------- Memory ---------- */
+		new Setting(containerEl).setName("Memory").setHeading();
+
+		containerEl.createDiv({
+			cls: "setting-item-description",
+			text: "The agent can remember things you ask it to, storing each fact as a note. These are ordinary notes — they sync to your other devices like the chats.",
+		});
+
+		new Setting(containerEl)
+			.setName("Memory folder")
+			.setDesc("Where memory notes are stored.")
+			.addText((t) =>
+				t
+					.setPlaceholder("vault-agent/memory")
+					.setValue(s.memoryFolder)
+					.onChange(async (v) => {
+						s.memoryFolder = v.trim() || "vault-agent/memory";
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Memories in context")
+			.setDesc("How many saved memories to inject into the system prompt each session. More = better recall, larger prompt.")
+			.addSlider((sl) =>
+				sl
+					.setLimits(1, 50, 1)
+					.setValue(s.memoryPromptLimit)
+					.setDynamicTooltip()
+					.onChange(async (v) => {
+						s.memoryPromptLimit = v;
+						await this.plugin.saveSettings();
+					})
+			);
+
 		/* ---------- Folder scope ---------- */
 		new Setting(containerEl).setName("Folder access").setHeading();
 

@@ -2,6 +2,7 @@ import { App } from "obsidian";
 import type { Attachment, ChatMessage, ReasoningEffort, VaultAgentSettings, ToolCall } from "./types";
 import { LlmClient, parseTextToolCall, isAborted } from "./client";
 import { TOOL_MAP, toolsAsOpenAISchema, toolsAsTextPrompt, scopeSystemNote } from "./tools";
+import { loadMemories, memoriesToPrompt } from "./memory";
 
 export type AgentEvent =
 	| { type: "text"; delta: string }
@@ -67,6 +68,7 @@ export class AgentLoop {
 		const systemContent =
 			this.settings.systemPrompt +
 			scopeSystemNote(scope) +
+			(await loadMemories(this.app, this.settings).then((f) => memoriesToPrompt(f, this.settings.memoryPromptLimit))) +
 			(useNative ? "" : "\n\n" + toolsAsTextPrompt());
 
 		const userMessage: ChatMessage = {
@@ -81,7 +83,7 @@ export class AgentLoop {
 			userMessage,
 		];
 
-		const toolCtx = { app: this.app, scope };
+		const toolCtx = { app: this.app, scope, settings: this.settings };
 		const callOpts = { nativeTools: useNative, temperature: this.settings.temperature, reasoningEffort };
 
 		let iterations = 0;

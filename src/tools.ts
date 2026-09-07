@@ -1,9 +1,11 @@
 import { App, TFile, TFolder, normalizePath, prepareFuzzySearch } from "obsidian";
-import type { ToolResult, WriteScope } from "./types";
+import type { ToolResult, WriteScope, VaultAgentSettings } from "./types";
+import { saveMemoryFact, deleteMemoryFact, recallMemory, listMemories, loadMemories } from "./memory";
 
 export interface ToolContext {
 	app: App;
 	scope: WriteScope;
+	settings: VaultAgentSettings;
 }
 
 export interface ToolDef {
@@ -310,6 +312,66 @@ export const TOOLS: ToolDef[] = [
 			const time = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
 			const weekday = now.toLocaleDateString("en-US", { weekday: "long" });
 			return ok(`date: ${date}\ntime: ${time}\nweekday: ${weekday}`);
+		},
+	},
+	/* ---- Memory: notes the agent keeps, synced like any other note ---- */
+	{
+		name: "save_memory",
+		description:
+			"Save a fact the user wants you to remember across sessions. Use for preferences, names, ongoing projects and anything they say to remember. Creates or updates a note in the memory folder.",
+		parameters: {
+			type: "object",
+			properties: {
+				key: { type: "string", description: "Short label, e.g. 'user-language', 'project-shortcut'." },
+				content: { type: "string", description: "The fact itself, 1-2 sentences." },
+			},
+			required: ["key", "content"],
+		},
+		mutating: true,
+		async run(ctx, args) {
+			const key = str(args, "key");
+			const content = typeof args?.content === "string" ? args.content : null;
+			if (!key || content === null) return fail("'key' and 'content' are required.");
+			return saveMemoryFact(ctx.app, ctx.settings, key, content);
+		},
+	},
+	{
+		name: "recall_memory",
+		description: "Retrieve a specific saved memory by its key.",
+		parameters: {
+			type: "object",
+			properties: { key: { type: "string", description: "The memory key to look up." } },
+			required: ["key"],
+		},
+		mutating: false,
+		async run(ctx, args) {
+			const key = str(args, "key");
+			if (!key) return fail("'key' is required.");
+			return recallMemory(ctx.app, ctx.settings, key);
+		},
+	},
+	{
+		name: "list_memory",
+		description: "List all saved memories with their keys and first line.",
+		parameters: { type: "object", properties: {} },
+		mutating: false,
+		async run(ctx) {
+			return listMemories(ctx.app, ctx.settings);
+		},
+	},
+	{
+		name: "delete_memory",
+		description: "Delete a saved memory by its key.",
+		parameters: {
+			type: "object",
+			properties: { key: { type: "string", description: "The memory key to delete." } },
+			required: ["key"],
+		},
+		mutating: true,
+		async run(ctx, args) {
+			const key = str(args, "key");
+			if (!key) return fail("'key' is required.");
+			return deleteMemoryFact(ctx.app, ctx.settings, key);
 		},
 	},
 ];
