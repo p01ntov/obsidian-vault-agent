@@ -25,6 +25,17 @@ export default class VaultAgentPlugin extends Plugin {
 			callback: () => this.activateViewWithNote(),
 		});
 
+		this.addCommand({
+			id: "new-chat",
+			name: "New chat",
+			callback: async () => {
+				await this.activateView();
+				const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT);
+				const view = leaves[0]?.view;
+				if (view instanceof ChatView) view.startNewChat();
+			},
+		});
+
 		this.addSettingTab(new VaultAgentSettingTab(this.app, this));
 
 		/* Import settings from note on startup if sync is enabled */
@@ -51,6 +62,8 @@ export default class VaultAgentPlugin extends Plugin {
 			this.settings.writeScope = { folders: [], restrictReads: false };
 		}
 		if (!this.settings.reasoningEffort) this.settings.reasoningEffort = "off";
+		if (typeof this.settings.saveChats !== "boolean") this.settings.saveChats = true;
+		if (!this.settings.chatFolder) this.settings.chatFolder = "vault-agent/chats";
 	}
 
 	async saveSettings() {

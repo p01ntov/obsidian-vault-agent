@@ -98,6 +98,37 @@ export class VaultAgentSettingTab extends PluginSettingTab {
 				})
 		);
 
+		/* ---------- Chat history ---------- */
+		new Setting(containerEl).setName("Chat history").setHeading();
+
+		new Setting(containerEl)
+			.setName("Save chats to the vault")
+			.setDesc(
+				"Write each conversation to a note so it survives restarts and syncs to your other devices."
+			)
+			.addToggle((t) =>
+				t.setValue(s.saveChats).onChange(async (v) => {
+					s.saveChats = v;
+					await this.plugin.saveSettings();
+					this.display();
+				})
+			);
+
+		if (s.saveChats) {
+			new Setting(containerEl)
+				.setName("Chat folder")
+				.setDesc("Where saved conversations are stored.")
+				.addText((t) =>
+					t
+						.setPlaceholder("vault-agent/chats")
+						.setValue(s.chatFolder)
+						.onChange(async (v) => {
+							s.chatFolder = v.trim() || "vault-agent/chats";
+							await this.plugin.saveSettings();
+						})
+				);
+		}
+
 		/* ---------- Folder scope ---------- */
 		new Setting(containerEl).setName("Folder access").setHeading();
 

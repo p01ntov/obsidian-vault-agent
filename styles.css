@@ -215,47 +215,149 @@
   color: var(--link-color);
 }
 
-/* ── Reasoning collapsible ───────────────────────────────── */
+/* Tables */
+.va-text table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+  font-size: 0.95em;
+  display: block;
+  overflow-x: auto;
+}
+
+.va-text th,
+.va-text td {
+  border: 1px solid var(--background-modifier-border);
+  padding: 5px 9px;
+  text-align: left;
+}
+
+.va-text th {
+  background: var(--background-secondary);
+  font-weight: 600;
+}
+
+.va-text tr:nth-child(even) td {
+  background: var(--background-primary-alt);
+}
+
+/* Task list checkboxes */
+.va-text input[type="checkbox"] {
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.va-text li.task-list-item {
+  list-style: none;
+  margin-left: -18px;
+}
+
+/* Horizontal rule */
+.va-text hr {
+  border: none;
+  border-top: 1px solid var(--background-modifier-border);
+  margin: 12px 0;
+}
+
+/* Callouts */
+.va-text .callout {
+  margin: 8px 0;
+  border-radius: var(--radius-m);
+}
+
+/* Images inside replies */
+.va-text img {
+  max-width: 100%;
+  border-radius: var(--radius-s);
+}
+
+/* Inline math and code blocks keep their own scroll */
+.va-text .math-block {
+  overflow-x: auto;
+}
+
+/* Tighter spacing for nested lists */
+.va-text li > ul,
+.va-text li > ol {
+  margin: 2px 0 2px 16px;
+}
+
+/* ── Reasoning: collapsible, ChatGPT style ──────────────── */
 .va-reasoning {
-  margin-top: 4px;
+  margin: 2px 0 8px;
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
+  border-left: 2px solid var(--background-modifier-border);
+  padding-left: 10px;
 }
 
 .va-reasoning summary {
   cursor: pointer;
   user-select: none;
-  padding: 2px 0;
+  padding: 3px 0;
   list-style: none;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
+  color: var(--text-muted);
+  border-radius: var(--radius-s);
+  transition: color 120ms ease;
+}
+
+.va-reasoning summary:hover {
+  color: var(--text-normal);
 }
 
 .va-reasoning summary::-webkit-details-marker {
   display: none;
 }
 
-.va-reasoning summary::before {
-  content: "▶";
-  font-size: 9px;
-  transition: transform 120ms ease;
+.va-reasoning-icon {
+  display: flex;
+  align-items: center;
+  opacity: 0.75;
+  flex-shrink: 0;
 }
 
-.va-reasoning[open] summary::before {
+.va-reasoning-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.va-reasoning-label {
+  font-weight: 500;
+}
+
+/* Chevron on the right, rotates when open */
+.va-reasoning summary::after {
+  content: "";
+  width: 0;
+  height: 0;
+  margin-left: 2px;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  opacity: 0.6;
+  transition: transform 150ms ease;
+}
+
+.va-reasoning[open] summary::after {
   transform: rotate(90deg);
 }
 
+/* Pulse the label while the model is still thinking */
+.va-reasoning[open] .va-reasoning-label {
+  animation: va-pulse 1.6s ease-in-out infinite;
+}
+
 .va-reasoning-body {
-  margin-top: 4px;
-  padding: 6px 8px;
-  background: var(--background-primary);
-  border-radius: var(--radius-s);
-  border: 1px solid var(--background-modifier-border);
+  margin-top: 5px;
+  padding: 2px 0 6px;
   white-space: pre-wrap;
-  font-family: var(--font-monospace);
-  font-size: 0.85em;
-  max-height: 200px;
+  font-size: var(--font-ui-smaller);
+  line-height: 1.55;
+  color: var(--text-faint);
+  max-height: 320px;
   overflow-y: auto;
 }
 
@@ -495,73 +597,109 @@
   display: block;
 }
 
-/* ── Toolbar chips (attach / folder / model / thinking) ──── */
+/* ── Toolbar: one row, never wraps ──────────────────────── */
 .va-toolbar {
   display: flex;
   align-items: center;
-  gap: 5px;
-  flex-wrap: wrap;
-}
-
-.va-toolbar-spacer {
-  flex: 1;
+  gap: 4px;
+  flex-wrap: nowrap;
   min-width: 0;
 }
 
-.va-chip {
+.va-tb-spacer {
+  flex: 1;
+  min-width: 4px;
+}
+
+/* Icon-only button (attach) */
+.va-tb-btn {
   display: flex;
   align-items: center;
-  gap: 3px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  border: 1px solid var(--background-modifier-border);
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
   background: transparent;
   color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
   cursor: pointer;
-  max-width: 180px;
-  min-height: 28px;
+  flex-shrink: 0;
   box-shadow: none;
 }
 
-.va-chip:hover {
+.va-tb-btn:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
-.va-chip-icon {
-  padding: 3px 7px;
-  min-width: 30px;
-  justify-content: center;
+.va-tb-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* Label chips — they shrink instead of wrapping */
+.va-tb-chip {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 7px;
+  height: 28px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+  min-width: 0;
+  flex-shrink: 1;
+  box-shadow: none;
+  white-space: nowrap;
+}
+
+.va-tb-chip:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.va-chip-ic {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.va-chip-ic svg {
+  width: 14px;
+  height: 14px;
 }
 
 .va-chip-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .va-chip-caret {
   display: flex;
   align-items: center;
-  opacity: 0.6;
+  opacity: 0.5;
   flex-shrink: 0;
 }
 
-.va-chip-icon-inline {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  opacity: 0.75;
+.va-chip-caret svg {
+  width: 12px;
+  height: 12px;
 }
 
 .va-chip-active {
-  border-color: var(--interactive-accent);
   color: var(--text-normal);
+  background: var(--background-modifier-hover);
 }
 
 .va-chip-warn {
-  border-color: var(--color-red);
   color: var(--color-red);
 }
 
@@ -595,32 +733,151 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
-  min-width: 30px;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0;
   border-radius: 50%;
   border: none;
   background: var(--interactive-accent);
   color: var(--text-on-accent);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background 120ms ease, transform 80ms ease;
+  box-shadow: none;
+  transition: background 120ms ease, opacity 120ms ease;
+}
+
+.va-send svg {
+  width: 16px;
+  height: 16px;
 }
 
 .va-send:hover {
   background: var(--interactive-accent-hover);
 }
 
-.va-send:active {
-  transform: scale(0.93);
-}
-
 .va-send-stop {
-  background: var(--color-red);
+  background: var(--text-normal);
+  color: var(--background-primary);
 }
 
 .va-send-stop:hover {
-  background: color-mix(in srgb, var(--color-red) 85%, black);
+  background: var(--text-muted);
+}
+
+/* ── Copy button on assistant replies ───────────────────── */
+.va-copy-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-top: 6px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  opacity: 0;
+  box-shadow: none;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+
+.va-msg-assistant:hover .va-copy-btn {
+  opacity: 1;
+}
+
+.va-copy-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.va-copy-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Touch devices have no hover, so keep it visible */
+@media (hover: none) {
+  .va-copy-btn {
+    opacity: 0.55;
+  }
+}
+
+/* ── History panel ──────────────────────────────────────── */
+.va-history {
+  position: absolute;
+  top: 37px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  background: var(--background-primary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.va-history-head {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.va-history-title {
+  flex: 1;
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.va-history-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.va-history-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.va-history-row {
+  display: flex;
+  align-items: center;
+  padding: 9px 10px;
+  border-radius: var(--radius-m);
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+
+.va-history-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.va-history-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.va-history-name {
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.va-history-date {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
 }
 
 /* ── Settings textarea ───────────────────────────────────── */
@@ -668,14 +925,21 @@
     padding: 6px 8px 10px;
   }
 
-  .va-send {
-    width: 36px;
-    height: 36px;
-    min-width: 36px;
+  /* Keep everything on one row: shrink labels rather than wrap */
+  .va-tb-chip {
+    padding: 0 6px;
+    gap: 1px;
   }
 
-  .va-chip {
-    min-height: 32px;
+  .va-tb-chip .va-chip-label {
+    max-width: 68px;
+  }
+
+  .va-send,
+  .va-tb-btn {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
   }
 
   .va-input {
