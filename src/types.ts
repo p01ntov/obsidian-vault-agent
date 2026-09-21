@@ -1,5 +1,8 @@
 export type AuthStyle = "bearer" | "x-api-key";
 
+/** How non-image attachments (PDFs, other binaries) are delivered to the API. */
+export type FileDelivery = "file" | "image_url" | "document" | "vault";
+
 export interface ProviderConfig {
 	id: string;
 	name: string;
@@ -7,6 +10,8 @@ export interface ProviderConfig {
 	apiKey: string;
 	model: string;
 	authStyle: AuthStyle;
+	/** Delivery style for file attachments — gateways differ in what they accept. */
+	fileDelivery?: FileDelivery;
 	extraHeaders: string;
 	/** Models discovered from GET /models, cached so the chat picker works offline. */
 	cachedModels: string[];
@@ -112,6 +117,8 @@ export interface Attachment {
 	size: number;
 	/** Set for text-like attachments whose content is inlined as a text part instead of being sent as data. */
 	text?: string;
+	/** Vault path the file was saved to, so it survives reloads and can be re-read by the model. */
+	savedPath?: string;
 }
 
 export interface ChatMessage {

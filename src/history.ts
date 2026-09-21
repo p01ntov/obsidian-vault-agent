@@ -1,6 +1,7 @@
 import { App, TFile, TFolder, normalizePath } from "obsidian";
-import type { ChatMessage, VaultAgentSettings } from "./types";
+import type { Attachment, ChatMessage, VaultAgentSettings } from "./types";
 import { newId } from "./types";
+import { TEXT_EXTENSIONS, IMAGE_MIME, arrayBufferToBase64 } from "./tools";
 
 /** One saved conversation. */
 export interface ChatSession {
@@ -43,7 +44,7 @@ export function deriveTitle(messages: ChatMessage[]): string {
 }
 
 /** Strip characters Obsidian will not accept in a file name. */
-function safeFileName(title: string): string {
+export function safeFileName(title: string): string {
 	const cleaned = title
 		.replace(/[\\/:*?"<>|#^[\]]/g, " ")
 		.replace(/\s+/g, " ")
@@ -51,7 +52,7 @@ function safeFileName(title: string): string {
 	return (cleaned || "chat").slice(0, 80);
 }
 
-function stamp(ms: number): string {
+export function stamp(ms: number): string {
 	const d = new Date(ms);
 	const pad = (n: number) => String(n).padStart(2, "0");
 	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}${pad(
@@ -61,6 +62,12 @@ function stamp(ms: number): string {
 
 function yamlEscape(s: string): string {
 	return '"' + s.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+}
+
+/** A display name that is safe to use as a wiki-link alias. */
+function linkAlias(name: string): string {
+	const cleaned = name.replace(/\[\]|#|\^|\|/g, " ").replace(/\s+/g, " ").trim();
+	return cleaned || "file";
 }
 
 function renderNote(session: ChatSession): string {
@@ -82,7 +89,14 @@ function renderNote(session: ChatSession): string {
 			const mark = m.role === "user" ? USER_MARK : ASSISTANT_MARK;
 			const who = m.role === "user" ? "You" : "Assistant";
 			const skills = m.skills?.length ? `*(skills: ${m.skills.join(", ")})*\n` : "";
-			const attached = m.attachments?.length ? `\n*(${m.attachments.length} attachment(s) attached)*\n` : "";
+			/* Saved attachments become wiki-links to the real files; chats from
+			 * versions without vault-saved files keep the plain count marker. */
+			const savedFiles = m.attachments?.filter((a) => a.savedPath) ?? [];
+			const attached = !m.attachments?.length
+				? ""
+				: savedFiles.length
+				? `\n*(files: ${savedFiles.map((a) => `[[${a.savedPath}|${linkAlias(a.name)}]]`).join(", ")})*\n`
+				: `\n*(${m.attachments.length} attachment(s) attached)*\n`;
 			return `${mark}\n### ${who}\n${skills}${attached}\n${m.content.trim()}\n`;
 		})
 		.join("\n");
@@ -168,6 +182,25 @@ export function listChats(app: App, settings: VaultAgentSettings): ChatSessionMe
 	return out;
 }
 
+/**
+ * Refill an attachment from its saved vault file. Saved notes and slim server
+ * copies keep only the path, so the data is read back here on resume. Returns
+ * null when the saved file no longer exists in the vault.
+ */
+export async function restoreAttachment(app: App, a: Attachment): Promise<Attachment | null> {
+	if (a.dataUrl || a.text != null) return a;
+	if (!a.savedPath) return a;
+	const file = app.vault.getAbstractFileByPath(normalizePath(a.savedPath));
+	if (!(file instanceof TFile)) return null;
+	const ext = file.extension.toLowerCase();
+	const mime = IMAGE_MIME[ext] ?? (ext === "pdf" ? "application/pdf" : a.mimeType || "application/octet-stream");
+	a.mimeType = mime;
+	a.size = file.stat.size;
+	if (TEXT_EXTENSIONS.has(ext)) a.text = await app.vault.read(file);
+	else a.dataUrl = `data:${mime};base64,${arrayBufferToBase64(await app.vault.readBinary(file))}`;
+	return a;
+}
+
 /** Read a saved chat back into a resumable session. */
 export async function loadChat(app: App, path: string): Promise<ChatSession | null> {
 	const file = app.vault.getAbstractFileByPath(path);
@@ -191,10 +224,27 @@ export async function loadChat(app: App, path: string): Promise<ChatSession | nu
 			? skillMatch[1].split(",").map((n) => n.trim()).filter(Boolean)
 			: undefined;
 		if (skillMatch) chunk = chunk.slice(skillMatch[0].length);
+		/* New format: wiki-links to the saved files; old format: a plain count. */
+		const filesMatch = chunk.match(/^\s*\*\(files: ([^*]+)\)\*\s*\n/);
+		let attachments: Attachment[] | undefined;
+		if (filesMatch) {
+			chunk = chunk.slice(filesMatch[0].length);
+			const saved: Attachment[] = [];
+			for (const link of filesMatch[1].matchAll(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g)) {
+				const filePath = link[1].trim();
+				const name = (link[2] ?? filePath.split("/").pop() ?? filePath).trim();
+				const restored = await restoreAttachment(app, { name, mimeType: "", dataUrl: "", size: 0, savedPath: filePath });
+				if (restored) saved.push(restored);
+			}
+			if (saved.length) attachments = saved;
+		}
 		chunk = chunk
 			.replace(/^\s*\*\(\d+ (?:image|attachment)\(s\) attached\)\*\s*\n/, "")
 			.trim();
-		if (chunk) messages.push({ role, content: chunk, skills: skills?.length ? skills : undefined });
+		/* A file-only message (no typed text) is still worth keeping. */
+		if (chunk || attachments) {
+			messages.push({ role, content: chunk, skills: skills?.length ? skills : undefined, attachments });
+		}
 	}
 
 	return {

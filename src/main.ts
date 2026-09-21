@@ -61,6 +61,7 @@ export default class VaultAgentPlugin extends Plugin {
 		/* Migrate: fill in fields added by later versions */
 		for (const p of this.settings.providers) {
 			if (!p.authStyle) p.authStyle = "bearer";
+			if (!p.fileDelivery) p.fileDelivery = "file";
 			if (!p.extraHeaders) p.extraHeaders = "";
 			if (!Array.isArray(p.cachedModels)) p.cachedModels = [];
 			if (typeof p.cachedModelsAt !== "number") p.cachedModelsAt = 0;

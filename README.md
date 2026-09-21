@@ -12,6 +12,7 @@ Chat with any OpenAI-compatible model and let it read, search, and write notes i
 - **Formulas like ChatGPT** — math in replies renders live while streaming: `$…$`, `$$…$$`, plus the `\(…\)`, `\[…\]`, and fenced `math` blocks that models actually emit.
 - **Thinking effort** — pick a reasoning level per message, or omit the field entirely for models that reject it.
 - **Any file attachments** — attach images, PDFs and text files to any message; the agent can also read and list every file in the vault, not just notes.
+- **Attachments live in the vault** — every attached file is saved under the chat folder the moment you send it, the chat note links to it, and it follows the conversation on reload and resume. A per-provider setting picks how the binary reaches the API — including a link-only mode where the model just gets the vault path.
 - **Skills (like @ in ChatGPT)** — mention @ in the composer to attach prompt-skills stored as markdown notes in your vault. Ships with Visualize (technical drawings as SVG opened in a zoomable window) and Diagram (Mermaid).
 - **Streaming** — replies appear as they generate, with an automatic fallback when an endpoint does not support it.
 

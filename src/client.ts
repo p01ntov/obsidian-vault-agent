@@ -1,5 +1,5 @@
 import { requestUrl } from "obsidian";
-import type { ChatMessage, ProviderConfig, ToolCall, ReasoningEffort } from "./types";
+import type { ChatMessage, ProviderConfig, ToolCall, ReasoningEffort, FileDelivery } from "./types";
 import { newId } from "./types";
 
 export interface StreamHandlers {
@@ -81,22 +81,52 @@ export function chatEndpoint(baseUrl: string): string {
 }
 
 /** Messages in the wire format the OpenAI-compatible API expects. */
-function toWire(messages: ChatMessage[], nativeTools: boolean): Record<string, unknown>[] {
+function toWire(
+	messages: ChatMessage[],
+	nativeTools: boolean,
+	fileDelivery: FileDelivery = "file"
+): Record<string, unknown>[] {
 	const out: Record<string, unknown>[] = [];
 	for (const m of messages) {
 		/*
 		 * User message with attachments uses the multimodal content-parts form:
-		 * images → image_url parts, text-like files → fenced text parts,
-		 * anything else (PDF and other binaries) → file parts with inline data.
+		 * images → image_url parts, text-like files → fenced text parts, and
+		 * binaries → file parts (or the style the gateway actually accepts —
+		 * some translate image_url/document blocks but drop file parts).
+		 * Every attachment saved in the vault also gets a text part with its
+		 * path, so the model can find the file again even when the gateway
+		 * drops the data itself.
 		 */
 		if (m.role === "user" && m.attachments?.length) {
 			const parts: Record<string, unknown>[] = [];
 			if (m.content) parts.push({ type: "text", text: m.content });
 			for (const a of m.attachments) {
+				if (a.savedPath) {
+					parts.push({
+						type: "text",
+						text: `File "${a.name}" is saved in the vault at "${a.savedPath}".`,
+					});
+				}
 				if (a.mimeType.startsWith("image/")) {
 					parts.push({ type: "image_url", image_url: { url: a.dataUrl } });
 				} else if (a.text != null) {
 					parts.push({ type: "text", text: "File \"" + a.name + "\":\n```\n" + a.text + "\n```" });
+				} else if (fileDelivery === "vault") {
+					/* Link-only mode: the path text above is the whole delivery. */
+				} else if (fileDelivery === "image_url") {
+					/* Compat gateways route PDFs through the image part by media type. */
+					parts.push({ type: "image_url", image_url: { url: a.dataUrl } });
+				} else if (fileDelivery === "document") {
+					/* Anthropic-style document block: raw base64, media type split out. */
+					const comma = a.dataUrl.indexOf(",");
+					parts.push({
+						type: "document",
+						source: {
+							type: "base64",
+							media_type: a.mimeType,
+							data: comma >= 0 ? a.dataUrl.slice(comma + 1) : a.dataUrl,
+						},
+					});
 				} else {
 					parts.push({ type: "file", file: { filename: a.name, file_data: a.dataUrl } });
 				}
@@ -186,7 +216,7 @@ export class LlmClient {
 	) {
 		const body: Record<string, unknown> = {
 			model: this.provider.model,
-			messages: toWire(messages, opts.nativeTools),
+			messages: toWire(messages, opts.nativeTools, this.provider.fileDelivery ?? "file"),
 			temperature: opts.temperature,
 			stream: opts.stream,
 		};

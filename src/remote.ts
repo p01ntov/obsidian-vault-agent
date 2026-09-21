@@ -76,9 +76,26 @@ export class RemoteChatStore {
 		}
 	}
 
-	/** Upsert a session on the server. */
+	/** Upsert a session on the server. Attachments that live in the vault go up
+	 * as metadata only — the data is read back from the vault on resume — so
+	 * payloads stay small even with many files. */
 	async put(session: ChatSession): Promise<void> {
-		await this.request("PUT", "/api/chats/" + encodeURIComponent(session.id), JSON.stringify(session));
+		const slim: ChatSession = {
+			...session,
+			messages: session.messages.map((m) =>
+				m.attachments?.length
+					? {
+							...m,
+							attachments: m.attachments.map((a) =>
+								a.savedPath
+									? { name: a.name, mimeType: a.mimeType, dataUrl: "", size: a.size, savedPath: a.savedPath }
+									: a
+							),
+						}
+					: m
+			),
+		};
+		await this.request("PUT", "/api/chats/" + encodeURIComponent(session.id), JSON.stringify(slim));
 	}
 
 	/** Remove a session from the server. */

@@ -1,11 +1,13 @@
 import { App, TFile, TFolder, normalizePath, prepareFuzzySearch } from "obsidian";
-import type { Attachment, ToolResult, WriteScope, VaultAgentSettings } from "./types";
+import type { Attachment, FileDelivery, ToolResult, WriteScope, VaultAgentSettings } from "./types";
 import { saveMemoryFact, deleteMemoryFact, recallMemory, listMemories, loadMemories } from "./memory";
 
 export interface ToolContext {
 	app: App;
 	scope: WriteScope;
 	settings: VaultAgentSettings;
+	/** How the active provider wants binaries delivered; "vault" means link-only. */
+	fileDelivery: FileDelivery;
 }
 
 export interface ToolDef {
@@ -109,9 +111,10 @@ const IMAGE_MIME: Record<string, string> = {
 	webp: "image/webp",
 	gif: "image/gif",
 };
+export { IMAGE_MIME };
 
 /** btoa in 8 KiB slices — one big call overflows the call stack, and mobile has no Buffer. */
-function arrayBufferToBase64(buf: ArrayBuffer): string {
+export function arrayBufferToBase64(buf: ArrayBuffer): string {
 	const bytes = new Uint8Array(buf);
 	const CHUNK = 0x2000; /* 8 KiB */
 	let binary = "";
@@ -139,6 +142,8 @@ async function readAsAttachment(
 		mimeType,
 		dataUrl: `data:${mimeType};base64,${b64}`,
 		size: file.stat.size,
+		/* The file already lives in the vault — the model can be told its path. */
+		savedPath: file.path,
 	};
 	return {
 		ok: true,
@@ -264,7 +269,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "read_file",
 		description:
-			"Read any vault file by exact path. Text files come back as content, images and PDFs are attached to the conversation. Does not append .md — use read_note for notes.",
+			"Read any vault file by exact path. Text files come back as content, images and PDFs are shared with you directly when the API accepts them. Does not append .md — use read_note for notes.",
 		parameters: {
 			type: "object",
 			properties: {
@@ -292,6 +297,12 @@ export const TOOLS: ToolDef[] = [
 				return readAsAttachment(ctx.app, entry, IMAGE_MIME[ext], 4 * 1024 * 1024, "image");
 			}
 			if (ext === "pdf") {
+				/* In link-only delivery the binary would never reach the model — say so instead. */
+				if (ctx.fileDelivery === "vault") {
+					return ok(
+						`PDF "${entry.path}" (${entry.stat.size} bytes) is in the vault, but its binary contents are not delivered to you in this mode. You can reference the file by its path.`
+					);
+				}
 				return readAsAttachment(ctx.app, entry, "application/pdf", 20 * 1024 * 1024, "PDF");
 			}
 			return fail(`"${entry.path}" is a binary ${ext} file; I can only read text files, images and PDFs.`);

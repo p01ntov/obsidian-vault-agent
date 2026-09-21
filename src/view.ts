@@ -23,6 +23,10 @@ import {
 	loadChat,
 	listChats,
 	deriveTitle,
+	chatFolder,
+	stamp,
+	safeFileName,
+	restoreAttachment,
 	type ChatSession,
 	type ChatSessionMeta,
 } from "./history";
@@ -81,6 +85,22 @@ function readFileAs(file: File, mode: "text" | "url"): Promise<string> {
 		if (mode === "text") r.readAsText(file);
 		else r.readAsDataURL(file);
 	});
+}
+
+/** Decode a data URL back to bytes so the attachment can be written into the vault. */
+function dataUrlToBuffer(dataUrl: string): ArrayBuffer {
+	const bin = atob(dataUrl.slice(dataUrl.indexOf(",") + 1));
+	const bytes = new Uint8Array(bin.length);
+	for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+	return bytes.buffer;
+}
+
+/** A vault file name for an attachment: cleaned, capped, extension preserved. */
+function vaultFileName(name: string): string {
+	const dot = name.lastIndexOf(".");
+	const ext = dot > 0 ? name.slice(dot + 1).replace(/[^a-z0-9]/gi, "").slice(0, 10) : "";
+	const base = safeFileName(dot > 0 ? name.slice(0, dot) : name).slice(0, 60) || "file";
+	return ext ? `${base}.${ext}` : base;
 }
 
 class ModelSuggestModal extends FuzzySuggestModal<string> {
@@ -451,6 +471,16 @@ export class ChatView extends ItemView {
 			new Notice("Vault Agent: chat not found on server.");
 			return;
 		}
+		/* Server copies carry attachment paths only — refill the data from the vault files. */
+		for (const m of session.messages) {
+			if (!m.attachments?.length) continue;
+			const restored: Attachment[] = [];
+			for (const a of m.attachments) {
+				const r = await restoreAttachment(this.app, a);
+				if (r) restored.push(r);
+			}
+			m.attachments = restored.length ? restored : undefined;
+		}
 		await this.showSession(session);
 	}
 
@@ -679,11 +709,42 @@ export class ChatView extends ItemView {
 				dataUrl,
 				size: file.size,
 			});
-			if (file.type !== "application/pdf") {
-				new Notice("Vault Agent: sent as a file — the model must support this type.");
-			}
 		}
 		this.renderAttachments();
+	}
+
+	/**
+	 * Attached files are written into the vault on send, so they persist, sync
+	 * with the vault and the model can find them again from any later turn.
+	 */
+	private async saveAttachmentsToVault(attachments: Attachment[]): Promise<void> {
+		if (!attachments.length) return;
+		const folder = `${chatFolder(this.plugin.settings)}/files`;
+		let cur = "";
+		for (const part of folder.split("/")) {
+			cur = cur ? `${cur}/${part}` : part;
+			if (!this.app.vault.getAbstractFileByPath(cur)) {
+				try { await this.app.vault.createFolder(cur); } catch { /* created concurrently */ }
+			}
+		}
+		for (const a of attachments) {
+			if (a.savedPath) continue;
+			try {
+				const base = `${stamp(Date.now())} ${vaultFileName(a.name)}`;
+				let path = `${folder}/${base}`;
+				let n = 2;
+				while (this.app.vault.getAbstractFileByPath(path)) path = `${folder}/${base} (${n++})`;
+				if (a.text != null) await this.app.vault.create(path, a.text);
+				else await this.app.vault.createBinary(path, dataUrlToBuffer(a.dataUrl));
+				a.savedPath = path;
+			} catch (e) {
+				new Notice(
+					"Vault Agent: could not save " + a.name + " to the vault — " +
+						(e instanceof Error ? e.message : String(e)),
+					8000
+				);
+			}
+		}
 	}
 
 	private renderAttachments() {
@@ -745,6 +806,7 @@ export class ChatView extends ItemView {
 			const gallery = body.createDiv({ cls: "va-msg-images" });
 			for (const a of images) {
 				const img = gallery.createEl("img", { cls: "va-msg-image" }); img.src = a.dataUrl; img.alt = a.name;
+				if (a.savedPath) this.wireFileOpen(img, a.savedPath);
 			}
 		}
 		if (files.length) {
@@ -754,10 +816,21 @@ export class ChatView extends ItemView {
 				const ic = chip.createSpan({ cls: "va-file-chip-icon" });
 				setIcon(ic, a.text != null ? "file-text" : "file");
 				chip.createSpan({ cls: "va-file-chip-name", text: a.name });
+				if (a.savedPath) this.wireFileOpen(chip, a.savedPath);
 			}
 		}
 		this.scrollDown();
 		return body;
+	}
+
+	/** Clicking an attachment that lives in the vault opens the real file. */
+	private wireFileOpen(el: HTMLElement, path: string): void {
+		el.addClass("va-file-link");
+		el.onclick = () => {
+			const file = this.app.vault.getAbstractFileByPath(path);
+			if (file instanceof TFile) void this.app.workspace.getLeaf(false).openFile(file);
+			else new Notice("Vault Agent: file not found — " + path);
+		};
 	}
 
 	private addCopyBtn(container: HTMLElement, text: string) {
@@ -813,6 +886,9 @@ export class ChatView extends ItemView {
 		const sentSkills = this.activeSkills.slice();
 		this.inputEl.value = "";
 		this.inputEl.style.height = "auto";
+
+		/* Attached files become real vault files before the message goes out. */
+		await this.saveAttachmentsToVault(sentAttachments);
 
 		/* User message */
 		const userBody = this.addMessageEl("user", sentAttachments);

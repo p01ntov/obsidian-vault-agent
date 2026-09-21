@@ -113,7 +113,12 @@ export class AgentLoop {
 			userMessage,
 		];
 
-		const toolCtx = { app: this.app, scope, settings: this.settings };
+		const toolCtx = {
+			app: this.app,
+			scope,
+			settings: this.settings,
+			fileDelivery: provider.fileDelivery ?? "file",
+		};
 		const callOpts = { nativeTools: useNative, temperature: this.settings.temperature, reasoningEffort };
 
 		let iterations = 0;

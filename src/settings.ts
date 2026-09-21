@@ -9,7 +9,7 @@ import {
 	setIcon,
 } from "obsidian";
 import type VaultAgentPlugin from "./main";
-import { DEFAULT_SYSTEM_PROMPT, REASONING_EFFORTS, newId, type ProviderConfig } from "./types";
+import { DEFAULT_SYSTEM_PROMPT, REASONING_EFFORTS, newId, type ProviderConfig, type FileDelivery } from "./types";
 import { LlmClient } from "./client";
 import { listChats, loadChat } from "./history";
 import { RemoteChatStore } from "./remote";
@@ -596,6 +596,24 @@ export class VaultAgentSettingTab extends PluginSettingTab {
 					.setValue(provider.authStyle)
 					.onChange(async (v) => {
 						provider.authStyle = v as "bearer" | "x-api-key";
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(box)
+			.setName("File delivery")
+			.setDesc(
+				"How PDFs and other binary attachments are sent. File part is the OpenAI standard; if the model acts like attachments never arrived, try image URL or document (Anthropic-style), or vault link to send only the saved file's path. Attachments are always saved into the vault either way."
+			)
+			.addDropdown((d) =>
+				d
+					.addOption("file", "File part (OpenAI)")
+					.addOption("image_url", "Image URL (compat gateways)")
+					.addOption("document", "Document (Anthropic-style)")
+					.addOption("vault", "Vault link (no binary sent)")
+					.setValue(provider.fileDelivery ?? "file")
+					.onChange(async (v) => {
+						provider.fileDelivery = v as FileDelivery;
 						await this.plugin.saveSettings();
 					})
 			);

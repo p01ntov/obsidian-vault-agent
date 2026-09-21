@@ -1290,3 +1290,8 @@
   flex: 1;
   min-width: 4px;
 }
+
+/* Attachments saved in the vault open the real file on click. */
+.va-file-link {
+  cursor: pointer;
+}
