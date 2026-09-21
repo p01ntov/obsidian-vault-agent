@@ -67,6 +67,9 @@ export default class VaultAgentPlugin extends Plugin {
 		if (!this.settings.reasoningEffort) this.settings.reasoningEffort = "off";
 		if (typeof this.settings.saveChats !== "boolean") this.settings.saveChats = true;
 		if (!this.settings.chatFolder) this.settings.chatFolder = "vault-agent/chats";
+		if (typeof this.settings.remoteChats !== "boolean") this.settings.remoteChats = false;
+		if (typeof this.settings.remoteUrl !== "string") this.settings.remoteUrl = "";
+		if (typeof this.settings.remoteToken !== "string") this.settings.remoteToken = "";
 		if (!this.settings.memoryFolder) this.settings.memoryFolder = "vault-agent/memory";
 		if (!this.settings.memoryPromptLimit) this.settings.memoryPromptLimit = 20;
 	}
@@ -122,6 +125,9 @@ export default class VaultAgentPlugin extends Plugin {
 			confirmWrites: this.settings.confirmWrites,
 			reasoningEffort: this.settings.reasoningEffort,
 			writeScope: this.settings.writeScope,
+			remoteChats: this.settings.remoteChats,
+			remoteUrl: this.settings.remoteUrl,
+			remoteToken: this.settings.remoteToken,
 		};
 		const content =
 			`---\nvault-agent-config: true\n---\n\n` +

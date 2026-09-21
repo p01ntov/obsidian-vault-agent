@@ -49,6 +49,10 @@ export interface VaultAgentSettings {
 	/** Save conversations as notes in the vault so they sync between devices. */
 	saveChats: boolean;
 	chatFolder: string;
+	/** Remote chat storage (vault-agent-hub): conversations saved on the user's own server. */
+	remoteChats: boolean;
+	remoteUrl: string;
+	remoteToken: string;
 	/** Agent memory: notes it writes to remember things across sessions. */
 	memoryFolder: string;
 	memoryPromptLimit: number;
@@ -81,6 +85,9 @@ export const DEFAULT_SETTINGS: VaultAgentSettings = {
 	writeScope: { folders: [], restrictReads: false },
 	saveChats: true,
 	chatFolder: "vault-agent/chats",
+	remoteChats: false,
+	remoteUrl: "",
+	remoteToken: "",
 	memoryFolder: "vault-agent/memory",
 	memoryPromptLimit: 20,
 	syncSettingsNote: false,

@@ -880,6 +880,47 @@
   color: var(--text-faint);
 }
 
+/* Delete button on each history row; hidden until the row is hovered */
+.va-history-del {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  margin-left: 4px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  flex-shrink: 0;
+  min-width: 26px;
+  min-height: 26px;
+  opacity: 0;
+  box-shadow: none;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+
+.va-history-row:hover .va-history-del {
+  opacity: 1;
+}
+
+.va-history-del:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.va-history-del svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Touch devices have no hover, so keep it visible */
+@media (hover: none) {
+  .va-history-del {
+    opacity: 0.55;
+  }
+}
+
 /* ── Settings textarea ───────────────────────────────────── */
 .va-settings-textarea {
   width: 100%;
@@ -950,4 +991,27 @@
     min-height: 44px;
     padding: 8px 16px;
   }
+}
+
+/* ── Math: wide formulas scroll instead of breaking the bubble ── */
+.va-text .math-block,
+.va-text mjx-container[display="true"] {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* ── User message markdown: same look as before, tighter paragraphs ── */
+.va-text-user {
+  font-size: var(--font-ui-small);
+  line-height: 1.6;
+  color: var(--text-normal);
+}
+
+.va-text-user p {
+  margin: 0 0 0.4em;
+}
+
+.va-text-user p:last-child {
+  margin-bottom: 0;
 }

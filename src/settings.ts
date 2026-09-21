@@ -11,6 +11,8 @@ import {
 import type VaultAgentPlugin from "./main";
 import { DEFAULT_SYSTEM_PROMPT, REASONING_EFFORTS, newId, type ProviderConfig } from "./types";
 import { LlmClient } from "./client";
+import { listChats, loadChat } from "./history";
+import { RemoteChatStore } from "./remote";
 
 /** Pick any folder in the vault. */
 class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
@@ -126,6 +128,93 @@ export class VaultAgentSettingTab extends PluginSettingTab {
 							s.chatFolder = v.trim() || "vault-agent/chats";
 							await this.plugin.saveSettings();
 						})
+				);
+		}
+
+		new Setting(containerEl)
+			.setName("Save chats on your server")
+			.setDesc(
+				"Conversations are stored on your VPS via the vault-agent-hub API, so they follow you to any device — no vault sync needed."
+			)
+			.addToggle((t) =>
+				t.setValue(s.remoteChats).onChange(async (v) => {
+					s.remoteChats = v;
+					await this.plugin.saveSettings();
+					this.display();
+				})
+			);
+
+		if (s.remoteChats) {
+			new Setting(containerEl)
+				.setName("Server URL")
+				.setDesc("Base URL of your vault-agent-hub instance, without a trailing slash.")
+				.addText((t) =>
+					t
+						.setPlaceholder("https://po1ntov.savva.christmas/vault-api")
+						.setValue(s.remoteUrl)
+						.onChange(async (v) => {
+							s.remoteUrl = v.trim();
+							await this.plugin.saveSettings();
+						})
+				);
+
+			new Setting(containerEl)
+				.setName("Access token")
+				.setDesc("The bearer token your server expects, if it requires one.")
+				.addText((t) => {
+					t.setValue(s.remoteToken).onChange(async (v) => {
+						s.remoteToken = v.trim();
+						await this.plugin.saveSettings();
+					});
+					t.inputEl.type = "password";
+				});
+
+			new Setting(containerEl)
+				.setName("Connection")
+				.setDesc("Check that the server is reachable with the URL and token above.")
+				.addButton((b) =>
+					b.setButtonText("Test connection").onClick(async () => {
+						b.setDisabled(true).setButtonText("Testing…");
+						try {
+							await new RemoteChatStore(s).test();
+							new Notice("Vault Agent: server connection works.");
+						} catch (e) {
+							new Notice("Vault Agent: " + (e instanceof Error ? e.message : String(e)), 12000);
+						} finally {
+							b.setDisabled(false).setButtonText("Test connection");
+						}
+					})
+				);
+
+			new Setting(containerEl)
+				.setName("Upload vault chats to server")
+				.setDesc(
+					"Copy every chat saved as a note in this vault to the server, so they show up on your other devices."
+				)
+				.addButton((b) =>
+					b.setButtonText("Upload vault chats").onClick(async () => {
+						b.setDisabled(true).setButtonText("Uploading…");
+						try {
+							const metas = listChats(this.app, s);
+							if (!metas.length) {
+								new Notice("Vault Agent: no saved vault chats found.");
+								return;
+							}
+							const store = new RemoteChatStore(s);
+							let count = 0;
+							for (const meta of metas) {
+								const session = await loadChat(this.app, meta.path);
+								if (!session?.id) continue;
+								await store.put(session);
+								count++;
+							}
+							new Notice(`Vault Agent: uploaded ${count} chat(s).`);
+						} catch (e) {
+							new Notice("Vault Agent: " + (e instanceof Error ? e.message : String(e)), 12000);
+						} finally {
+							b.setDisabled(false).setButtonText("Upload vault chats");
+						}
+					})
 				);
 		}
 

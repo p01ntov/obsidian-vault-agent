@@ -8,6 +8,7 @@ import {
 	Component,
 	Menu,
 	FuzzySuggestModal,
+	TFile,
 	TFolder,
 	App,
 } from "obsidian";
@@ -25,8 +26,16 @@ import {
 	type ChatSession,
 	type ChatSessionMeta,
 } from "./history";
+import { normalizeMath, hardenChatNewlines } from "./math";
+import { RemoteChatStore, type RemoteChatMeta } from "./remote";
 
 export const VIEW_TYPE_CHAT = "vault-agent-chat";
+
+/** One row in the history panel: either a vault note or a chat stored on the server. */
+interface HistoryEntry {
+	meta: ChatSessionMeta;
+	remote: boolean;
+}
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
@@ -218,16 +227,15 @@ export class ChatView extends ItemView {
 	private toggleHistory() {
 		this.historyVisible = !this.historyVisible;
 		if (this.historyVisible) {
-			this.renderHistory();
+			void this.renderHistory();
 			this.historyPanel.show();
 		} else {
 			this.historyPanel.hide();
 		}
 	}
 
-	private renderHistory() {
+	private async renderHistory() {
 		this.historyPanel.empty();
-		const chats = listChats(this.app, this.plugin.settings);
 
 		const head = this.historyPanel.createDiv({ cls: "va-history-head" });
 		head.createDiv({ cls: "va-history-title", text: "Recent chats" });
@@ -238,21 +246,114 @@ export class ChatView extends ItemView {
 			this.historyPanel.hide();
 		};
 
-		if (!chats.length) {
-			this.historyPanel.createDiv({ cls: "va-history-empty", text: "No saved chats yet." });
+		const list = this.historyPanel.createDiv({ cls: "va-history-list" });
+
+		/* With remote storage on, the list comes from the server instead of the vault. */
+		const store = new RemoteChatStore(this.plugin.settings);
+		let entries: HistoryEntry[];
+		if (store.enabled) {
+			list.createDiv({ cls: "va-history-empty", text: "Loading chats…" });
+			try {
+				const rows = await store.list();
+				entries = rows.map((r) => ({
+					meta: { id: r.id, title: r.title, path: "", updatedAt: r.updatedAt },
+					remote: true,
+				}));
+			} catch (e) {
+				const msg = e instanceof Error ? e.message : String(e);
+				new Notice("Vault Agent: could not load chats — " + msg, 10000);
+				list.empty();
+				list.createDiv({ cls: "va-history-empty", text: msg });
+				return;
+			}
+			list.empty();
+		} else {
+			entries = listChats(this.app, this.plugin.settings).map((meta) => ({ meta, remote: false }));
+		}
+
+		if (!entries.length) {
+			list.createDiv({ cls: "va-history-empty", text: "No saved chats yet." });
 			return;
 		}
 
-		const list = this.historyPanel.createDiv({ cls: "va-history-list" });
-		for (const meta of chats) {
-			const row = list.createDiv({ cls: "va-history-row" });
-			const info = row.createDiv({ cls: "va-history-info" });
-			info.createDiv({ cls: "va-history-name", text: meta.title || "Untitled" });
-			const d = new Date(meta.updatedAt);
-			const dateStr = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-			info.createDiv({ cls: "va-history-date", text: dateStr });
-			row.onclick = () => void this.resumeChat(meta);
+		for (const entry of entries) {
+			this.renderHistoryRow(list, entry);
 		}
+	}
+
+	private renderHistoryRow(list: HTMLElement, entry: HistoryEntry) {
+		const meta = entry.meta;
+		const row = list.createDiv({ cls: "va-history-row" });
+		const info = row.createDiv({ cls: "va-history-info" });
+		info.createDiv({ cls: "va-history-name", text: meta.title || "Untitled" });
+		const d = new Date(meta.updatedAt);
+		const dateStr = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+		info.createDiv({ cls: "va-history-date", text: dateStr });
+		row.onclick = () => {
+			if (entry.remote) void this.resumeRemoteChat(meta);
+			else void this.resumeChat(meta);
+		};
+
+		const del = row.createEl("button", { cls: "va-history-del", attr: { "aria-label": "Delete chat" } });
+		setIcon(del, "trash");
+		del.onclick = async (e) => {
+			e.stopPropagation();
+			try {
+				if (entry.remote) {
+					await new RemoteChatStore(this.plugin.settings).delete(meta.id);
+				} else {
+					await this.trashVaultChat(meta);
+				}
+			} catch (err) {
+				new Notice("Vault Agent: " + (err instanceof Error ? err.message : String(err)), 10000);
+				return;
+			}
+			void this.renderHistory();
+		};
+	}
+
+	/** Move a saved chat's note to the system trash. */
+	private async trashVaultChat(meta: ChatSessionMeta) {
+		const file = this.app.vault.getAbstractFileByPath(meta.path);
+		if (file instanceof TFile) await this.app.vault.trash(file, true);
+	}
+
+	/** Replace the open chat with a loaded session and repaint the transcript. */
+	private async showSession(session: ChatSession) {
+		this.loop?.abort();
+		this.session = session;
+		this.messagesEl.empty();
+		this.historyPanel.hide();
+		this.historyVisible = false;
+
+		await this.renderSessionMessages(session);
+		this.scrollDown();
+	}
+
+	/** Paint a loaded session's user/assistant messages. Server sessions also keep reasoning. */
+	private async renderSessionMessages(session: ChatSession) {
+		for (const m of session.messages) {
+			if (m.role !== "user" && m.role !== "assistant") continue;
+			const body = this.addMessageEl(m.role, m.attachments ?? []);
+			if (m.role === "assistant") {
+				if (m.reasoning) this.addReasoningBlock(body, m.reasoning);
+				const textEl = body.createDiv({ cls: "va-text" });
+				await this.renderMarkdownInto(textEl, m.content);
+				this.addCopyBtn(body, m.content);
+			} else {
+				await this.renderMarkdownInto(body.createDiv({ cls: "va-text va-text-user" }), m.content, { userTyped: true });
+			}
+		}
+	}
+
+	/** Collapsed "Thinking" block for reasoning replayed from a stored session. */
+	private addReasoningBlock(container: HTMLElement, reasoning: string) {
+		const details = container.createEl("details", { cls: "va-reasoning" });
+		const summary = details.createEl("summary");
+		const summaryIcon = summary.createSpan({ cls: "va-reasoning-icon" });
+		setIcon(summaryIcon, "brain");
+		summary.createSpan({ cls: "va-reasoning-label", text: "Thinking" });
+		details.createDiv({ cls: "va-reasoning-body", text: reasoning });
 	}
 
 	private async resumeChat(meta: ChatSessionMeta) {
@@ -261,25 +362,22 @@ export class ChatView extends ItemView {
 			new Notice("Vault Agent: chat not found.");
 			return;
 		}
-		this.loop?.abort();
-		this.session = session;
-		this.messagesEl.empty();
-		this.historyPanel.hide();
-		this.historyVisible = false;
+		await this.showSession(session);
+	}
 
-		for (const m of session.messages) {
-			if (m.role === "user" || m.role === "assistant") {
-				const body = this.addMessageEl(m.role, m.attachments ?? []);
-				if (m.role === "assistant") {
-					const textEl = body.createDiv({ cls: "va-text" });
-					await this.renderMarkdownInto(textEl, m.content);
-					this.addCopyBtn(body, m.content);
-				} else {
-					body.createDiv({ text: m.content });
-				}
-			}
+	private async resumeRemoteChat(meta: RemoteChatMeta) {
+		let session: ChatSession | null;
+		try {
+			session = await new RemoteChatStore(this.plugin.settings).get(meta.id);
+		} catch (e) {
+			new Notice("Vault Agent: " + (e instanceof Error ? e.message : String(e)), 10000);
+			return;
 		}
-		this.scrollDown();
+		if (!session) {
+			new Notice("Vault Agent: chat not found on server.");
+			return;
+		}
+		await this.showSession(session);
 	}
 
 	startNewChat() {
@@ -509,9 +607,14 @@ export class ChatView extends ItemView {
 		};
 	}
 
-	private async renderMarkdownInto(el: HTMLElement, markdown: string) {
+	private async renderMarkdownInto(el: HTMLElement, markdown: string, opts?: { userTyped?: boolean }) {
 		el.empty();
-		await MarkdownRenderer.render(this.app, markdown, el, "", this.renderComponent);
+		/* LLM delimiters (\[…\], \(…\), ```math) become $/$$ that Obsidian renders;
+		 * user-typed text additionally keeps its line breaks the way chat UIs do. */
+		const src = opts?.userTyped
+			? hardenChatNewlines(normalizeMath(markdown))
+			: normalizeMath(markdown);
+		await MarkdownRenderer.render(this.app, src, el, "", this.renderComponent);
 		/* Open external links in browser instead of Obsidian */
 		el.querySelectorAll("a[href]").forEach((a) => {
 			const href = a.getAttribute("href") ?? "";
@@ -546,7 +649,7 @@ export class ChatView extends ItemView {
 
 		/* User message */
 		const userBody = this.addMessageEl("user", sentAttachments);
-		if (text) userBody.createDiv({ text });
+		if (text) void this.renderMarkdownInto(userBody.createDiv({ cls: "va-text va-text-user" }), text, { userTyped: true });
 
 		this.setBusy(true);
 
@@ -569,12 +672,47 @@ export class ChatView extends ItemView {
 			return toolsEl;
 		};
 
+		/* Live markdown while streaming: renders are throttled to one per ~300ms and
+		 * serialized through a queue; each job reads `accumulated` fresh when it runs,
+		 * so a slow render can never paint stale text. */
+		let liveTimer: number | null = null;
+		let liveSeq = 0;
+		let streamingDone = false;
+		let renderQueue: Promise<void> = Promise.resolve();
+		let rawTextShown = false;
+
+		const scheduleLiveRender = () => {
+			if (streamingDone || liveTimer !== null) return;
+			liveTimer = window.setTimeout(() => {
+				liveTimer = null;
+				const seq = ++liveSeq;
+				renderQueue = renderQueue
+					.then(async () => {
+						/* Newest scheduled job wins; superseded and post-stream jobs are skipped */
+						if (streamingDone || seq !== liveSeq) return;
+						const el = textEl;
+						if (!el) return;
+						await this.renderMarkdownInto(el, accumulated);
+						this.scrollDown();
+					})
+					.catch(() => {
+						/* A failed live render must not kill the chain */
+					});
+			}, 300);
+		};
+
 		this.loop = new AgentLoop(this.app, this.plugin.settings, this.session.messages, (e: AgentEvent) => {
 			switch (e.type) {
 				case "text": {
 					const el = ensureTextEl();
 					accumulated += e.delta;
-					el.setText(accumulated);
+					if (!rawTextShown) {
+						/* First delta: raw text appears instantly, before markdown kicks in */
+						el.setText(accumulated);
+						rawTextShown = true;
+					} else {
+						scheduleLiveRender();
+					}
 					this.scrollDown();
 					break;
 				}
@@ -650,7 +788,15 @@ export class ChatView extends ItemView {
 				folder: this.selectedFolder || undefined,
 			});
 
-			/* Final markdown render */
+			/* Final markdown render — must be the last write: stop the scheduler and
+			 * let any live render still queued behind the chain drain first. */
+			streamingDone = true;
+			if (liveTimer !== null) {
+				window.clearTimeout(liveTimer);
+				liveTimer = null;
+			}
+			liveSeq++;
+			await renderQueue;
 			if (textEl && accumulated) {
 				await this.renderMarkdownInto(textEl, accumulated);
 				/* Collapse reasoning now that reply is final */
@@ -659,12 +805,24 @@ export class ChatView extends ItemView {
 			/* Copy button */
 			if (accumulated) this.addCopyBtn(assistantBody, accumulated);
 
-			/* Auto-save */
-			if (this.plugin.settings.saveChats && accumulated) {
+			/* Auto-save: vault note and server copy are independent — run whichever is enabled. */
+			if (accumulated) {
 				this.session.title = this.session.title || deriveTitle(this.session.messages);
-				void saveChat(this.app, this.plugin.settings, this.session).catch((e) =>
-					console.warn("[VaultAgent] autosave failed:", e)
-				);
+				this.session.updatedAt = Date.now();
+				if (this.plugin.settings.saveChats) {
+					void saveChat(this.app, this.plugin.settings, this.session).catch((e) =>
+						console.warn("[VaultAgent] autosave failed:", e)
+					);
+				}
+				const store = new RemoteChatStore(this.plugin.settings);
+				if (store.enabled) {
+					void store.put(this.session).catch((e) =>
+						new Notice(
+							"Vault Agent: chat not saved to server — " + (e instanceof Error ? e.message : String(e)),
+							8000
+						)
+					);
+				}
 			}
 		} finally {
 			thinkingEl.remove();
