@@ -81,8 +81,9 @@ function renderNote(session: ChatSession): string {
 		.map((m) => {
 			const mark = m.role === "user" ? USER_MARK : ASSISTANT_MARK;
 			const who = m.role === "user" ? "You" : "Assistant";
-			const images = m.attachments?.length ? `\n*(${m.attachments.length} image(s) attached)*\n` : "";
-			return `${mark}\n### ${who}\n${images}\n${m.content.trim()}\n`;
+			const skills = m.skills?.length ? `*(skills: ${m.skills.join(", ")})*\n` : "";
+			const attached = m.attachments?.length ? `\n*(${m.attachments.length} attachment(s) attached)*\n` : "";
+			return `${mark}\n### ${who}\n${skills}${attached}\n${m.content.trim()}\n`;
 		})
 		.join("\n");
 
@@ -183,11 +184,17 @@ export async function loadChat(app: App, path: string): Promise<ChatSession | nu
 	const parts = body.split(new RegExp(`(${USER_MARK}|${ASSISTANT_MARK})`, "g"));
 	for (let i = 1; i < parts.length; i += 2) {
 		const role = parts[i] === USER_MARK ? "user" : "assistant";
-		const chunk = (parts[i + 1] ?? "")
-			.replace(/^\s*###\s+(You|Assistant)\s*\n/, "")
-			.replace(/^\s*\*\(\d+ image\(s\) attached\)\*\s*\n/, "")
+		let chunk = (parts[i + 1] ?? "").replace(/^\s*###\s+(You|Assistant)\s*\n/, "");
+		/* Skills line precedes the attachments line; both strips run in that order. */
+		const skillMatch = chunk.match(/^\s*\*\(skills: ([^)]+)\)\*\s*\n/);
+		const skills = skillMatch
+			? skillMatch[1].split(",").map((n) => n.trim()).filter(Boolean)
+			: undefined;
+		if (skillMatch) chunk = chunk.slice(skillMatch[0].length);
+		chunk = chunk
+			.replace(/^\s*\*\(\d+ (?:image|attachment)\(s\) attached\)\*\s*\n/, "")
 			.trim();
-		if (chunk) messages.push({ role, content: chunk });
+		if (chunk) messages.push({ role, content: chunk, skills: skills?.length ? skills : undefined });
 	}
 
 	return {

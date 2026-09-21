@@ -13,6 +13,7 @@ import { DEFAULT_SYSTEM_PROMPT, REASONING_EFFORTS, newId, type ProviderConfig } 
 import { LlmClient } from "./client";
 import { listChats, loadChat } from "./history";
 import { RemoteChatStore } from "./remote";
+import { ensureBuiltinSkills } from "./skills";
 
 /** Pick any folder in the vault. */
 class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
@@ -251,6 +252,44 @@ export class VaultAgentSettingTab extends PluginSettingTab {
 						s.memoryPromptLimit = v;
 						await this.plugin.saveSettings();
 					})
+			);
+
+		/* ---------- Skills ---------- */
+		new Setting(containerEl).setName("Skills").setHeading();
+
+		containerEl.createDiv({
+			cls: "setting-item-description",
+			text: "Skills are markdown notes with vault-agent-skill: true in their frontmatter, plus name and description. Their body is injected into the conversation while the skill is attached — mention @ in the composer or use the wand button to pick one. Ships with Visualize (SVG drawings) and Diagram (Mermaid), created automatically; add your own the same way.",
+		});
+
+		new Setting(containerEl)
+			.setName("Skills folder")
+			.setDesc("Where skill notes are stored.")
+			.addText((t) =>
+				t
+					.setPlaceholder("vault-agent/skills")
+					.setValue(s.skillsFolder)
+					.onChange(async (v) => {
+						s.skillsFolder = v.trim() || "vault-agent/skills";
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Restore built-in skills")
+			.setDesc("Recreate the built-in skill notes if they are missing. Existing notes are never modified.")
+			.addButton((b) =>
+				b.setButtonText("Restore built-in skills").onClick(async () => {
+					b.setDisabled(true).setButtonText("Restoring…");
+					try {
+						await ensureBuiltinSkills(this.app, s);
+						new Notice("Built-in skills restored.");
+					} catch (e) {
+						new Notice("Vault Agent: " + (e instanceof Error ? e.message : String(e)), 10000);
+					} finally {
+						b.setDisabled(false).setButtonText("Restore built-in skills");
+					}
+				})
 			);
 
 		/* ---------- Folder scope ---------- */

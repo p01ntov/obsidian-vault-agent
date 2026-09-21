@@ -28,6 +28,9 @@ import {
 } from "./history";
 import { normalizeMath, hardenChatNewlines } from "./math";
 import { RemoteChatStore, type RemoteChatMeta } from "./remote";
+import { TEXT_EXTENSIONS } from "./tools";
+import { loadSkills, type Skill } from "./skills";
+import { upgradeSvgBlocks, openSvgDrawing } from "./svgview";
 
 export const VIEW_TYPE_CHAT = "vault-agent-chat";
 
@@ -38,6 +41,47 @@ interface HistoryEntry {
 }
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const MAX_TEXT_BYTES = 256 * 1024;
+const MAX_BINARY_BYTES = 20 * 1024 * 1024;
+
+/* Mime types that count as text even though they do not start with text/. */
+const TEXT_MIME_TYPES = new Set([
+	"application/json",
+	"application/xml",
+	"application/javascript",
+	"application/x-yaml",
+	"application/toml",
+]);
+
+function fileExt(name: string): string {
+	const i = name.lastIndexOf(".");
+	return i < 0 ? "" : name.slice(i + 1).toLowerCase();
+}
+
+/** Text-like by mime or extension — inlined as text instead of sent as a data URL. */
+function isTextLike(file: File): boolean {
+	return (
+		file.type.startsWith("text/") ||
+		TEXT_MIME_TYPES.has(file.type) ||
+		TEXT_EXTENSIONS.has(fileExt(file.name))
+	);
+}
+
+function humanSize(bytes: number): string {
+	if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+	if (bytes >= 1024) return Math.round(bytes / 1024) + " KB";
+	return bytes + " B";
+}
+
+function readFileAs(file: File, mode: "text" | "url"): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const r = new FileReader();
+		r.onload = () => resolve(String(r.result));
+		r.onerror = () => reject(r.error);
+		if (mode === "text") r.readAsText(file);
+		else r.readAsDataURL(file);
+	});
+}
 
 class ModelSuggestModal extends FuzzySuggestModal<string> {
 	constructor(app: App, private models: string[], private onPick: (m: string) => void) {
@@ -63,6 +107,16 @@ class FolderPickModal extends FuzzySuggestModal<TFolder> {
 	onChooseItem(f: TFolder) { this.onPick(f); }
 }
 
+class SkillSuggestModal extends FuzzySuggestModal<Skill> {
+	constructor(app: App, private skills: Skill[], private onPick: (s: Skill) => void) {
+		super(app);
+		this.setPlaceholder("Pick a skill");
+	}
+	getItems(): Skill[] { return this.skills; }
+	getItemText(s: Skill) { return `${s.name} — ${s.description}`; }
+	onChooseItem(s: Skill) { this.onPick(s); }
+}
+
 export class ChatView extends ItemView {
 	private session!: ChatSession;
 	private messagesEl!: HTMLElement;
@@ -72,6 +126,7 @@ export class ChatView extends ItemView {
 	private effortBtn!: HTMLButtonElement;
 	private folderBtn!: HTMLButtonElement;
 	private attachRow!: HTMLElement;
+	private skillsRow!: HTMLElement;
 	private fileInput!: HTMLInputElement;
 	private historyPanel!: HTMLElement;
 	private historyVisible = false;
@@ -84,6 +139,7 @@ export class ChatView extends ItemView {
 	private selectedEffort: ReasoningEffort = "off";
 	private selectedFolder = "";
 	private attachments: Attachment[] = [];
+	private activeSkills: Skill[] = [];
 
 	constructor(leaf: WorkspaceLeaf, private plugin: VaultAgentPlugin) {
 		super(leaf);
@@ -132,6 +188,9 @@ export class ChatView extends ItemView {
 		this.attachRow = composer.createDiv({ cls: "va-attachments" });
 		this.attachRow.hide();
 
+		this.skillsRow = composer.createDiv({ cls: "va-skills" });
+		this.skillsRow.hide();
+
 		this.inputEl = composer.createEl("textarea", {
 			cls: "va-input",
 			attr: { placeholder: "Message Vault Agent…", rows: "1" },
@@ -143,10 +202,18 @@ export class ChatView extends ItemView {
 		/* Attach */
 		const attachBtn = toolbar.createEl("button", {
 			cls: "va-tb-btn",
-			attr: { "aria-label": "Attach image" },
+			attr: { "aria-label": "Attach file" },
 		});
 		setIcon(attachBtn, "paperclip");
 		attachBtn.onclick = () => this.fileInput.click();
+
+		/* Skills */
+		const skillsBtn = toolbar.createEl("button", {
+			cls: "va-tb-btn",
+			attr: { "aria-label": "Skills" },
+		});
+		setIcon(skillsBtn, "wand");
+		skillsBtn.onclick = () => this.openSkillPicker();
 
 		/* Folder */
 		this.folderBtn = toolbar.createEl("button", { cls: "va-tb-chip" });
@@ -166,10 +233,10 @@ export class ChatView extends ItemView {
 		setIcon(this.sendBtn, "arrow-up");
 		this.sendBtn.onclick = () => this.onSend();
 
-		/* Hidden file input */
+		/* Hidden file input — any file type, multiple */
 		this.fileInput = composer.createEl("input", {
 			type: "file",
-			attr: { accept: "image/*", multiple: "true" },
+			attr: { multiple: "true" },
 		});
 		this.fileInput.hide();
 		this.fileInput.onchange = () => {
@@ -190,6 +257,12 @@ export class ChatView extends ItemView {
 		});
 
 		this.inputEl.addEventListener("keydown", (e) => {
+			/* @ at the start or after a word opens the skill picker, like ChatGPT */
+			if (e.key === "@" && (this.inputEl.value === "" || /\s$/.test(this.inputEl.value))) {
+				e.preventDefault();
+				this.openSkillPicker();
+				return;
+			}
 			if (e.key === "Enter" && !e.shiftKey && !Platform.isMobile) {
 				e.preventDefault();
 				this.onSend();
@@ -335,6 +408,7 @@ export class ChatView extends ItemView {
 		for (const m of session.messages) {
 			if (m.role !== "user" && m.role !== "assistant") continue;
 			const body = this.addMessageEl(m.role, m.attachments ?? []);
+			if (m.role === "user" && m.skills?.length) this.renderSkillTags(body, m.skills);
 			if (m.role === "assistant") {
 				if (m.reasoning) this.addReasoningBlock(body, m.reasoning);
 				const textEl = body.createDiv({ cls: "va-text" });
@@ -385,6 +459,8 @@ export class ChatView extends ItemView {
 		this.session = newSession(this.currentProvider()?.model ?? "");
 		this.attachments = [];
 		this.renderAttachments();
+		this.activeSkills = [];
+		this.renderSkillChips();
 		this.messagesEl.empty();
 		this.showEmptyState();
 	}
@@ -527,18 +603,86 @@ export class ChatView extends ItemView {
 		}
 	}
 
+	/* ── Skills ── */
+
+	private openSkillPicker(): void {
+		void loadSkills(this.app, this.plugin.settings).then((skills) => {
+			if (!skills.length) {
+				new Notice("Vault Agent: no skills yet — add notes to the skills folder in settings.");
+				return;
+			}
+			new SkillSuggestModal(this.app, skills, (s) => this.addSkill(s)).open();
+		});
+	}
+
+	private addSkill(skill: Skill): void {
+		const needle = skill.name.trim().toLowerCase();
+		if (this.activeSkills.some((s) => s.name.trim().toLowerCase() === needle)) return;
+		this.activeSkills.push(skill);
+		this.renderSkillChips();
+		this.inputEl.focus();
+	}
+
+	private removeSkill(idx: number): void {
+		this.activeSkills.splice(idx, 1);
+		this.renderSkillChips();
+	}
+
+	private renderSkillChips(): void {
+		this.skillsRow.empty();
+		if (!this.activeSkills.length) { this.skillsRow.hide(); return; }
+		this.skillsRow.show();
+		this.activeSkills.forEach((s, i) => {
+			const chip = this.skillsRow.createDiv({ cls: "va-skill-chip" });
+			const ic = chip.createSpan({ cls: "va-skill-chip-icon" });
+			setIcon(ic, "wand");
+			chip.createSpan({ cls: "va-skill-chip-name", text: s.name });
+			const rm = chip.createEl("button", { cls: "va-skill-chip-x", attr: { "aria-label": "Remove skill" } });
+			setIcon(rm, "x");
+			rm.onclick = () => this.removeSkill(i);
+		});
+	}
+
+	/** Wand pills shown above a sent user message. */
+	private renderSkillTags(body: HTMLElement, names: string[]): void {
+		const tags = body.createDiv({ cls: "va-msg-skill-tags" });
+		for (const name of names) {
+			const pill = tags.createSpan({ cls: "va-skill-tag" });
+			const ic = pill.createSpan({ cls: "va-skill-tag-icon" });
+			setIcon(ic, "wand");
+			pill.createSpan({ text: name });
+		}
+	}
+
 	/* ── Attachments ── */
 
-	private async addAttachment(file: File) {
-		if (!file.type.startsWith("image/")) { new Notice("Vault Agent: only images."); return; }
-		if (file.size > MAX_IMAGE_BYTES) { new Notice(`Too large: ${file.name}`); return; }
-		const dataUrl = await new Promise<string>((resolve, reject) => {
-			const r = new FileReader();
-			r.onload = () => resolve(String(r.result));
-			r.onerror = () => reject(r.error);
-			r.readAsDataURL(file);
-		});
-		this.attachments.push({ name: file.name || "image", mimeType: file.type, dataUrl, size: file.size });
+	private async addAttachment(file: File): Promise<void> {
+		if (file.type.startsWith("image/")) {
+			if (file.size > MAX_IMAGE_BYTES) { new Notice(`Too large: ${file.name}`); return; }
+			const dataUrl = await readFileAs(file, "url");
+			this.attachments.push({ name: file.name || "image", mimeType: file.type, dataUrl, size: file.size });
+		} else if (isTextLike(file) && file.size <= MAX_TEXT_BYTES) {
+			const text = await readFileAs(file, "text");
+			this.attachments.push({
+				name: file.name || "file",
+				mimeType: file.type || "text/plain",
+				dataUrl: "",
+				size: file.size,
+				text,
+			});
+		} else {
+			if (file.size > MAX_BINARY_BYTES) { new Notice(`Too large: ${file.name}`); return; }
+			const dataUrl = await readFileAs(file, "url");
+			this.attachments.push({
+				name: file.name || "file",
+				mimeType: file.type || "application/octet-stream",
+				dataUrl,
+				size: file.size,
+			});
+			if (file.type !== "application/pdf") {
+				new Notice("Vault Agent: sent as a file — the model must support this type.");
+			}
+		}
 		this.renderAttachments();
 	}
 
@@ -548,8 +692,16 @@ export class ChatView extends ItemView {
 		this.attachRow.show();
 		this.attachments.forEach((a, i) => {
 			const chip = this.attachRow.createDiv({ cls: "va-attachment" });
-			const img = chip.createEl("img", { cls: "va-attachment-thumb" });
-			img.src = a.dataUrl; img.alt = a.name;
+			if (a.mimeType.startsWith("image/")) {
+				const img = chip.createEl("img", { cls: "va-attachment-thumb" });
+				img.src = a.dataUrl; img.alt = a.name;
+			} else {
+				chip.addClass("va-attach-file");
+				const ic = chip.createSpan({ cls: "va-attach-file-icon" });
+				setIcon(ic, a.text != null ? "file-text" : "file");
+				chip.createSpan({ cls: "va-attach-file-name", text: a.name });
+				chip.createSpan({ cls: "va-attach-file-size", text: humanSize(a.size) });
+			}
 			const rm = chip.createEl("button", { cls: "va-attachment-x", attr: { "aria-label": "Remove" } });
 			setIcon(rm, "x");
 			rm.onclick = () => { this.attachments.splice(i, 1); this.renderAttachments(); };
@@ -587,10 +739,21 @@ export class ChatView extends ItemView {
 		this.messagesEl.querySelector(".va-empty")?.remove();
 		const wrap = this.messagesEl.createDiv({ cls: `va-msg va-msg-${role}` });
 		const body = wrap.createDiv({ cls: "va-msg-body" });
-		if (attachments.length) {
+		const images = attachments.filter((a) => a.mimeType.startsWith("image/"));
+		const files = attachments.filter((a) => !a.mimeType.startsWith("image/"));
+		if (images.length) {
 			const gallery = body.createDiv({ cls: "va-msg-images" });
-			for (const a of attachments) {
+			for (const a of images) {
 				const img = gallery.createEl("img", { cls: "va-msg-image" }); img.src = a.dataUrl; img.alt = a.name;
+			}
+		}
+		if (files.length) {
+			const row = body.createDiv({ cls: "va-msg-files" });
+			for (const a of files) {
+				const chip = row.createSpan({ cls: "va-file-chip" });
+				const ic = chip.createSpan({ cls: "va-file-chip-icon" });
+				setIcon(ic, a.text != null ? "file-text" : "file");
+				chip.createSpan({ cls: "va-file-chip-name", text: a.name });
 			}
 		}
 		this.scrollDown();
@@ -620,6 +783,8 @@ export class ChatView extends ItemView {
 			const href = a.getAttribute("href") ?? "";
 			if (href.startsWith("http")) a.setAttribute("target", "_blank");
 		});
+		/* Completed ```svg fences become artifact cards */
+		upgradeSvgBlocks(el, (src) => openSvgDrawing(this.app, this.plugin.settings, src));
 	}
 
 	private setBusy(busy: boolean) {
@@ -644,11 +809,14 @@ export class ChatView extends ItemView {
 		const sentAttachments = this.attachments.slice();
 		this.attachments = [];
 		this.renderAttachments();
+		/* Skills stay attached for follow-ups */
+		const sentSkills = this.activeSkills.slice();
 		this.inputEl.value = "";
 		this.inputEl.style.height = "auto";
 
 		/* User message */
 		const userBody = this.addMessageEl("user", sentAttachments);
+		if (sentSkills.length) this.renderSkillTags(userBody, sentSkills.map((s) => s.name));
 		if (text) void this.renderMarkdownInto(userBody.createDiv({ cls: "va-text va-text-user" }), text, { userTyped: true });
 
 		this.setBusy(true);
@@ -785,6 +953,7 @@ export class ChatView extends ItemView {
 				model: this.selectedModel,
 				reasoningEffort: this.selectedEffort,
 				attachments: sentAttachments,
+				skills: sentSkills,
 				folder: this.selectedFolder || undefined,
 			});
 

@@ -2,6 +2,7 @@ import { Plugin, WorkspaceLeaf, Notice, TFile, normalizePath } from "obsidian";
 import { VIEW_TYPE_CHAT, ChatView } from "./view";
 import { VaultAgentSettingTab } from "./settings";
 import { DEFAULT_SETTINGS, type VaultAgentSettings } from "./types";
+import { ensureBuiltinSkills } from "./skills";
 
 export default class VaultAgentPlugin extends Plugin {
 	settings!: VaultAgentSettings;
@@ -41,6 +42,9 @@ export default class VaultAgentPlugin extends Plugin {
 		/* Ensure the memory folder exists so the tools work from the first message. */
 		this.app.workspace.onLayoutReady(() => void this.ensureFolder(this.settings.memoryFolder));
 
+		/* Create the skills folder and the built-in skill notes. */
+		this.app.workspace.onLayoutReady(() => void this.ensureSkillsFolder());
+
 		/* Import settings from note on startup if sync is enabled */
 		if (this.settings.syncSettingsNote) {
 			this.app.workspace.onLayoutReady(() => this.importSettingsNote());
@@ -72,6 +76,7 @@ export default class VaultAgentPlugin extends Plugin {
 		if (typeof this.settings.remoteToken !== "string") this.settings.remoteToken = "";
 		if (!this.settings.memoryFolder) this.settings.memoryFolder = "vault-agent/memory";
 		if (!this.settings.memoryPromptLimit) this.settings.memoryPromptLimit = 20;
+		if (!this.settings.skillsFolder) this.settings.skillsFolder = "vault-agent/skills";
 	}
 
 	async saveSettings() {
@@ -173,6 +178,15 @@ export default class VaultAgentPlugin extends Plugin {
 			await this.app.vault.createFolder(normalizePath(path));
 		} catch {
 			/* already created */
+		}
+	}
+
+	/* Skills folder plus the built-in skill notes; failures are not fatal. */
+	private async ensureSkillsFolder(): Promise<void> {
+		try {
+			await ensureBuiltinSkills(this.app, this.settings);
+		} catch (e) {
+			console.warn("[VaultAgent] skill setup failed:", e);
 		}
 	}
 }

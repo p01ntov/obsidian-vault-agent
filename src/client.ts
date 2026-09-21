@@ -84,12 +84,22 @@ export function chatEndpoint(baseUrl: string): string {
 function toWire(messages: ChatMessage[], nativeTools: boolean): Record<string, unknown>[] {
 	const out: Record<string, unknown>[] = [];
 	for (const m of messages) {
-		/* User message carrying images uses the multimodal content-parts form. */
+		/*
+		 * User message with attachments uses the multimodal content-parts form:
+		 * images → image_url parts, text-like files → fenced text parts,
+		 * anything else (PDF and other binaries) → file parts with inline data.
+		 */
 		if (m.role === "user" && m.attachments?.length) {
 			const parts: Record<string, unknown>[] = [];
 			if (m.content) parts.push({ type: "text", text: m.content });
 			for (const a of m.attachments) {
-				parts.push({ type: "image_url", image_url: { url: a.dataUrl } });
+				if (a.mimeType.startsWith("image/")) {
+					parts.push({ type: "image_url", image_url: { url: a.dataUrl } });
+				} else if (a.text != null) {
+					parts.push({ type: "text", text: "File \"" + a.name + "\":\n```\n" + a.text + "\n```" });
+				} else {
+					parts.push({ type: "file", file: { filename: a.name, file_data: a.dataUrl } });
+				}
 			}
 			out.push({ role: "user", content: parts });
 			continue;

@@ -56,6 +56,8 @@ export interface VaultAgentSettings {
 	/** Agent memory: notes it writes to remember things across sessions. */
 	memoryFolder: string;
 	memoryPromptLimit: number;
+	/** Skills: instruction-notes attachable to a conversation. */
+	skillsFolder: string;
 	syncSettingsNote: boolean;
 	syncSettingsNotePath: string;
 	debug: boolean;
@@ -90,6 +92,7 @@ export const DEFAULT_SETTINGS: VaultAgentSettings = {
 	remoteToken: "",
 	memoryFolder: "vault-agent/memory",
 	memoryPromptLimit: 20,
+	skillsFolder: "vault-agent/skills",
 	syncSettingsNote: false,
 	syncSettingsNotePath: "vault-agent/config.md",
 	debug: false,
@@ -101,12 +104,14 @@ export interface ToolCall {
 	args: string;
 }
 
-/** An image attached to a user message, stored as a data URL. */
+/** An image or file attached to a user message, stored as a data URL. */
 export interface Attachment {
 	name: string;
 	mimeType: string;
 	dataUrl: string;
 	size: number;
+	/** Set for text-like attachments whose content is inlined as a text part instead of being sent as data. */
+	text?: string;
 }
 
 export interface ChatMessage {
@@ -117,12 +122,16 @@ export interface ChatMessage {
 	toolName?: string;
 	reasoning?: string;
 	attachments?: Attachment[];
+	/** Skill names active when this user message was sent. */
+	skills?: string[];
 	error?: boolean;
 }
 
 export interface ToolResult {
 	ok: boolean;
 	output: string;
+	/** Set when a tool wants a file attached to the conversation for the next model call. */
+	attachment?: Attachment;
 }
 
 export function newId(): string {

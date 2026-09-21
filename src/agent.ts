@@ -1,8 +1,9 @@
 import { App } from "obsidian";
-import type { Attachment, ChatMessage, ReasoningEffort, VaultAgentSettings, ToolCall } from "./types";
+import type { Attachment, ChatMessage, ReasoningEffort, VaultAgentSettings, ToolCall, ToolResult } from "./types";
 import { LlmClient, parseTextToolCall, isAborted } from "./client";
 import { TOOL_MAP, toolsAsOpenAISchema, toolsAsTextPrompt, scopeSystemNote } from "./tools";
 import { loadMemories, memoriesToPrompt } from "./memory";
+import { loadSkills, skillsToPrompt, type Skill } from "./skills";
 
 export type AgentEvent =
 	| { type: "text"; delta: string }
@@ -19,6 +20,8 @@ export interface RunOptions {
 	model?: string;
 	reasoningEffort?: ReasoningEffort;
 	attachments?: Attachment[];
+	/** Skills attached to this message; names are remembered on the user message. */
+	skills?: Skill[];
 	/** Narrow this run to one folder, on top of the settings-level scope. */
 	folder?: string;
 }
@@ -65,16 +68,43 @@ export class AgentLoop {
 			? { folders: [options.folder], restrictReads: this.settings.writeScope.restrictReads }
 			: this.settings.writeScope;
 
+		/* Attached skills: the ones picked for this message, then any still active from
+		 * earlier user turns in this conversation. */
+		const skillNames: string[] = [];
+		const addSkillName = (n: string) => {
+			const t = n.trim();
+			if (t && !skillNames.some((x) => x.toLowerCase() === t.toLowerCase())) skillNames.push(t);
+		};
+		for (const s of options.skills ?? []) addSkillName(s.name);
+		for (const m of this.history) {
+			if (m.role !== "user" || !m.skills?.length) continue;
+			for (const n of m.skills) addSkillName(n);
+		}
+
+		let skillsPrompt = "";
+		if (skillNames.length) {
+			const loaded = await loadSkills(this.app, this.settings);
+			const byName = new Map(loaded.map((s) => [s.name.trim().toLowerCase(), s]));
+			const matched: Skill[] = [];
+			for (const n of skillNames) {
+				const s = byName.get(n.toLowerCase());
+				if (s) matched.push(s);
+			}
+			skillsPrompt = skillsToPrompt(matched);
+		}
+
 		const systemContent =
 			this.settings.systemPrompt +
 			scopeSystemNote(scope) +
 			(await loadMemories(this.app, this.settings).then((f) => memoriesToPrompt(f, this.settings.memoryPromptLimit))) +
+			skillsPrompt +
 			(useNative ? "" : "\n\n" + toolsAsTextPrompt());
 
 		const userMessage: ChatMessage = {
 			role: "user",
 			content: userText,
 			attachments: options.attachments?.length ? options.attachments : undefined,
+			skills: options.skills?.length ? options.skills.map((s) => s.name) : undefined,
 		};
 
 		const workingHistory: ChatMessage[] = [
@@ -215,7 +245,7 @@ export class AgentLoop {
 					/* leave empty */
 				}
 
-				let result;
+				let result: ToolResult;
 				try {
 					result = await tool.run(toolCtx, args);
 				} catch (e) {
@@ -230,6 +260,14 @@ export class AgentLoop {
 					toolCallId: tc.id,
 					toolName: tc.name,
 				});
+				/* The file itself rides along as an extra user message after the tool result. */
+				if (result.attachment) {
+					workingHistory.push({
+						role: "user",
+						content: `[Attached file from tool ${tc.name}: ${result.attachment.name}]`,
+						attachments: [result.attachment],
+					});
+				}
 			}
 		}
 

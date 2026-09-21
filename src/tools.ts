@@ -1,5 +1,5 @@
 import { App, TFile, TFolder, normalizePath, prepareFuzzySearch } from "obsidian";
-import type { ToolResult, WriteScope, VaultAgentSettings } from "./types";
+import type { Attachment, ToolResult, WriteScope, VaultAgentSettings } from "./types";
 import { saveMemoryFact, deleteMemoryFact, recallMemory, listMemories, loadMemories } from "./memory";
 
 export interface ToolContext {
@@ -80,10 +80,71 @@ function clip(text: string, limit = MAX_CHARS): string {
 
 /** Markdown files the agent is allowed to see, honouring restrictReads. */
 function visibleFiles(ctx: ToolContext): TFile[] {
-	const files = ctx.app.vault.getMarkdownFiles();
+	return scopeFilter(ctx, ctx.app.vault.getMarkdownFiles());
+}
+
+/** Any file the agent is allowed to see — same rules, every file type. */
+function visibleAllFiles(ctx: ToolContext): TFile[] {
+	return scopeFilter(ctx, ctx.app.vault.getFiles());
+}
+
+function scopeFilter(ctx: ToolContext, files: TFile[]): TFile[] {
 	const folders = (ctx.scope?.folders ?? []).filter((f) => f.trim().length);
 	if (!folders.length || !ctx.scope.restrictReads) return files;
 	return files.filter((f) => folders.some((folder) => isInside(f.path, folder)));
+}
+
+/* Extensions read as plain text; anything else counts as binary. */
+export const TEXT_EXTENSIONS = new Set([
+	"md", "txt", "text", "csv", "tsv", "json", "jsonl", "yaml", "yml", "xml", "html", "htm",
+	"css", "js", "mjs", "ts", "jsx", "tsx", "py", "rs", "go", "java", "kt", "c", "h", "cpp",
+	"hpp", "cs", "php", "rb", "sh", "bash", "zsh", "ps1", "sql", "ini", "toml", "env", "log",
+	"tex", "srt", "vtt",
+]);
+
+const IMAGE_MIME: Record<string, string> = {
+	png: "image/png",
+	jpg: "image/jpeg",
+	jpeg: "image/jpeg",
+	webp: "image/webp",
+	gif: "image/gif",
+};
+
+/** btoa in 8 KiB slices — one big call overflows the call stack, and mobile has no Buffer. */
+function arrayBufferToBase64(buf: ArrayBuffer): string {
+	const bytes = new Uint8Array(buf);
+	const CHUNK = 0x2000; /* 8 KiB */
+	let binary = "";
+	for (let i = 0; i < bytes.length; i += CHUNK) {
+		binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+	}
+	return btoa(binary);
+}
+
+/** Read a binary file into an attachment, capped at `maxBytes`. */
+async function readAsAttachment(
+	app: App,
+	file: TFile,
+	mimeType: string,
+	maxBytes: number,
+	kind: string
+): Promise<ToolResult> {
+	if (file.stat.size > maxBytes) {
+		const cap = Math.round(maxBytes / (1024 * 1024));
+		return fail(`"${file.path}" is too large (${file.stat.size} bytes). ${kind} files are capped at ${cap} MiB.`);
+	}
+	const b64 = arrayBufferToBase64(await app.vault.readBinary(file));
+	const attachment: Attachment = {
+		name: file.name,
+		mimeType,
+		dataUrl: `data:${mimeType};base64,${b64}`,
+		size: file.stat.size,
+	};
+	return {
+		ok: true,
+		output: `Read ${kind} "${file.path}" (${file.stat.size} bytes) — it is attached to the conversation below.`,
+		attachment,
+	};
 }
 
 export const TOOLS: ToolDef[] = [
@@ -133,6 +194,51 @@ export const TOOLS: ToolDef[] = [
 		},
 	},
 	{
+		name: "list_files",
+		description:
+			"List files of every type in the vault (images, PDFs, data files, …), optionally under a folder. list_notes covers markdown notes only. Returns paths with size and modification date.",
+		parameters: {
+			type: "object",
+			properties: {
+				folder: { type: "string", description: "Folder path, e.g. 'Универ'. Omit for everything available." },
+				limit: { type: "number", description: "Max results (default 100)." },
+			},
+		},
+		mutating: false,
+		async run(ctx, args) {
+			const { app } = ctx;
+			const folder = str(args, "folder");
+			const limit = Math.min(Number(args?.limit) || 100, 500);
+			let files = visibleAllFiles(ctx);
+
+			if (folder) {
+				const denied = scopeError(ctx.scope, cleanFolder(folder), false);
+				if (denied) return fail(denied);
+				const target = app.vault.getAbstractFileByPath(cleanFolder(folder));
+				if (!target) {
+					const known = app.vault
+						.getAllLoadedFiles()
+						.filter((f): f is TFolder => f instanceof TFolder)
+						.map((f) => f.path)
+						.filter((p) => p !== "/")
+						.slice(0, 40);
+					return fail(`Folder "${folder}" not found. Existing folders:\n` + known.join("\n"));
+				}
+				files = files.filter((f) => isInside(f.path, folder));
+			}
+
+			if (!files.length) return ok("No files found.");
+			files.sort((a, b) => b.stat.mtime - a.stat.mtime);
+			const shown = files.slice(0, limit);
+			const lines = shown.map((f) => {
+				const d = new Date(f.stat.mtime).toISOString().slice(0, 10);
+				return `${f.path}  (${f.stat.size}b, modified ${d})`;
+			});
+			const more = files.length > shown.length ? `\n[... ${files.length - shown.length} more]` : "";
+			return ok(`${files.length} file(s):\n` + lines.join("\n") + more);
+		},
+	},
+	{
 		name: "read_note",
 		description: "Read the full content of one note by path.",
 		parameters: {
@@ -153,6 +259,42 @@ export const TOOLS: ToolDef[] = [
 				return fail(`Note "${path}" not found. Use list_notes or search_notes to find the right path.`);
 			const content = await ctx.app.vault.cachedRead(file);
 			return ok(`# ${file.path}\n\n` + clip(content));
+		},
+	},
+	{
+		name: "read_file",
+		description:
+			"Read any vault file by exact path. Text files come back as content, images and PDFs are attached to the conversation. Does not append .md — use read_note for notes.",
+		parameters: {
+			type: "object",
+			properties: {
+				path: { type: "string", description: "Exact file path, e.g. 'docs/report.pdf'." },
+			},
+			required: ["path"],
+		},
+		mutating: false,
+		async run(ctx, args) {
+			const path = str(args, "path");
+			if (!path) return fail("'path' is required.");
+			const denied = scopeError(ctx.scope, path, false);
+			if (denied) return fail(denied);
+			const entry = ctx.app.vault.getAbstractFileByPath(normalizePath(path));
+			if (!(entry instanceof TFile)) {
+				return fail(`File "${path}" not found. Use list_files to find the right path.`);
+			}
+
+			const ext = entry.extension.toLowerCase();
+			if (TEXT_EXTENSIONS.has(ext)) {
+				const content = await ctx.app.vault.cachedRead(entry);
+				return ok(`# ${entry.path}\n\n` + clip(content));
+			}
+			if (IMAGE_MIME[ext]) {
+				return readAsAttachment(ctx.app, entry, IMAGE_MIME[ext], 4 * 1024 * 1024, "image");
+			}
+			if (ext === "pdf") {
+				return readAsAttachment(ctx.app, entry, "application/pdf", 20 * 1024 * 1024, "PDF");
+			}
+			return fail(`"${entry.path}" is a binary ${ext} file; I can only read text files, images and PDFs.`);
 		},
 	},
 	{

@@ -11,7 +11,8 @@ Chat with any OpenAI-compatible model and let it read, search, and write notes i
 - **Server chat storage** — save conversations to your own server instead (or as well): a tiny SQLite-backed API you host on a VPS, so chats follow you to every device with no vault sync at all. See [server/](server/README.md).
 - **Formulas like ChatGPT** — math in replies renders live while streaming: `$…$`, `$$…$$`, plus the `\(…\)`, `\[…\]`, and fenced `math` blocks that models actually emit.
 - **Thinking effort** — pick a reasoning level per message, or omit the field entirely for models that reject it.
-- **Image attachments** — attach or paste images for vision-capable models.
+- **Any file attachments** — attach images, PDFs and text files to any message; the agent can also read and list every file in the vault, not just notes.
+- **Skills (like @ in ChatGPT)** — mention @ in the composer to attach prompt-skills stored as markdown notes in your vault. Ships with Visualize (technical drawings as SVG opened in a zoomable window) and Diagram (Mermaid).
 - **Streaming** — replies appear as they generate, with an automatic fallback when an endpoint does not support it.
 
 ## Install with BRAT
@@ -39,6 +40,8 @@ npm run dev      # watch mode
 The plugin bundles no Node built-ins, so it runs inside the mobile Obsidian runtime. Streaming uses `fetch`, which can be blocked by CORS on some gateways; the plugin falls back to a non-streaming request automatically. Server chat storage uses Obsidian's `requestUrl`, which has no CORS restrictions on either platform.
 
 API keys live in the plugin's `data.json`. Enabling hidden-file sync carries them between devices, or you can enter the key separately on each one.
+
+Skills are ordinary notes, so @-mentions work on mobile too — and the wand button is there when the keyboard has no @.
 
 ## Server chat storage
 

@@ -1015,3 +1015,278 @@
 .va-text-user p:last-child {
   margin-bottom: 0;
 }
+
+/* ── Skills: composer row and chips ─────────────────────── */
+.va-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.va-skill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+}
+
+.va-skill-chip-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.va-skill-chip-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.va-skill-chip-x {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.va-skill-chip-x:hover {
+  color: var(--text-error);
+}
+
+.va-skill-chip-x svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Skill pills shown on a sent user message */
+.va-msg-skill-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.va-skill-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.va-skill-tag-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.va-skill-tag-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* ── Attachments: non-image chips ────────────────────────── */
+.va-attachment.va-attach-file {
+  width: auto;
+  height: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+}
+
+.va-attach-file-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.va-attach-file-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.va-attach-file-name {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+.va-attach-file-size {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+/* Read-only file chips inside a sent message */
+.va-msg-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.va-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-s);
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  max-width: 100%;
+}
+
+.va-file-chip-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.va-file-chip-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.va-file-chip-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── SVG artifact card (completed ```svg fence) ──────────── */
+.va-artifact {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  margin: 8px 0;
+  background: var(--background-secondary);
+}
+
+.va-artifact-icon {
+  display: flex;
+  align-items: center;
+  color: var(--interactive-accent);
+  flex-shrink: 0;
+}
+
+.va-artifact-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.va-artifact-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.va-artifact-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.va-artifact-sub {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.va-artifact-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.va-artifact-open {
+  min-height: 24px;
+  padding: 2px 12px;
+  font-size: var(--font-ui-smaller);
+  border-radius: var(--radius-s);
+}
+
+/* ── SVG drawing window ─────────────────────────────────── */
+.va-svg-modal {
+  --dialog-width: min(90vw, 960px);
+}
+
+/* White on purpose, in dark theme too: drawings are black-on-white */
+.va-svg-canvas {
+  background: #fff;
+  border-radius: 8px;
+  overflow: auto;
+  max-height: 60vh;
+  padding: 12px;
+  display: grid;
+}
+
+/* Safe centering: centred when it fits, scrollable from the top-left when it does not */
+.va-svg-holder {
+  margin: auto;
+  transform-origin: top left;
+}
+
+.va-svg-holder svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+.va-svg-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.va-svg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 2px 10px;
+  font-size: var(--font-ui-smaller);
+  border-radius: var(--radius-s);
+}
+
+.va-svg-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.va-svg-zoom-label {
+  min-width: 44px;
+  text-align: center;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.va-svg-tb-spacer {
+  flex: 1;
+  min-width: 4px;
+}
