@@ -9,6 +9,7 @@ Chat with any OpenAI-compatible model and let it read, search, and write notes i
 - **Folder scope** — restrict where the agent may write, optionally where it may read too.
 - **Chat history** — conversations are saved as notes, so they survive restarts and sync between devices.
 - **Server chat storage** — save conversations to your own server instead (or as well): a tiny SQLite-backed API you host on a VPS, so chats follow you to every device with no vault sync at all. See [server/](server/README.md).
+- **Server-first sessions** — with the toggle on, the whole session lives on the server: messages and attachment binaries (no chat notes in the vault at all), stale saves are detected across devices, and the hub pushes backups to Google Drive from its `.env` config.
 - **Formulas like ChatGPT** — math in replies renders live while streaming: `$…$`, `$$…$$`, plus the `\(…\)`, `\[…\]`, and fenced `math` blocks that models actually emit.
 - **Thinking effort** — pick a reasoning level per message, or omit the field entirely for models that reject it.
 - **Any file attachments** — attach images, PDFs and text files to any message; the agent can also read and list every file in the vault, not just notes.

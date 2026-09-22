@@ -32,7 +32,7 @@ import {
 } from "./history";
 import { normalizeMath, hardenChatNewlines } from "./math";
 import { RemoteChatStore, type RemoteChatMeta } from "./remote";
-import { TEXT_EXTENSIONS } from "./tools";
+import { TEXT_EXTENSIONS, arrayBufferToBase64 } from "./tools";
 import { loadSkills, type Skill } from "./skills";
 import { upgradeSvgBlocks, openSvgDrawing } from "./svgview";
 
@@ -103,6 +103,11 @@ function vaultFileName(name: string): string {
 	return ext ? `${base}.${ext}` : base;
 }
 
+/** True when fetched bytes should be handled as text — same heuristics as the composer's isTextLike. */
+function isTextPayload(mime: string, name: string): boolean {
+	return mime.startsWith("text/") || TEXT_MIME_TYPES.has(mime) || TEXT_EXTENSIONS.has(fileExt(name));
+}
+
 class ModelSuggestModal extends FuzzySuggestModal<string> {
 	constructor(app: App, private models: string[], private onPick: (m: string) => void) {
 		super(app);
@@ -160,6 +165,8 @@ export class ChatView extends ItemView {
 	private selectedFolder = "";
 	private attachments: Attachment[] = [];
 	private activeSkills: Skill[] = [];
+	/** updatedAt of the session as last seen on the server — base for stale-save (409) detection. */
+	private serverBaseUpdatedAt: number | null = null;
 
 	constructor(leaf: WorkspaceLeaf, private plugin: VaultAgentPlugin) {
 		super(leaf);
@@ -176,6 +183,7 @@ export class ChatView extends ItemView {
 		this.selectedEffort = s.reasoningEffort;
 		this.selectedModel = this.currentProvider()?.model ?? "";
 		this.session = newSession(this.selectedModel);
+		this.serverBaseUpdatedAt = null;
 
 		const root = this.contentEl;
 		root.empty();
@@ -457,12 +465,20 @@ export class ChatView extends ItemView {
 			return;
 		}
 		await this.showSession(session);
+		/* A vault chat has no server version to guard against. */
+		this.serverBaseUpdatedAt = null;
 	}
 
 	private async resumeRemoteChat(meta: RemoteChatMeta) {
+		await this.loadRemoteSession(meta.id, new RemoteChatStore(this.plugin.settings));
+	}
+
+	/** Load a session from the server, refill its attachments and show it — the one
+	 * path shared by history resume and the stale-version (409) reload. */
+	private async loadRemoteSession(id: string, store: RemoteChatStore): Promise<void> {
 		let session: ChatSession | null;
 		try {
-			session = await new RemoteChatStore(this.plugin.settings).get(meta.id);
+			session = await store.get(id);
 		} catch (e) {
 			new Notice("Vault Agent: " + (e instanceof Error ? e.message : String(e)), 10000);
 			return;
@@ -471,22 +487,66 @@ export class ChatView extends ItemView {
 			new Notice("Vault Agent: chat not found on server.");
 			return;
 		}
-		/* Server copies carry attachment paths only — refill the data from the vault files. */
+		await this.hydrateRemoteSession(session, store);
+		await this.showSession(session);
+		this.serverBaseUpdatedAt = session.updatedAt;
+	}
+
+	/**
+	 * Refill attachment data on a server session. Vault-saved files (old chats)
+	 * come back from the vault as before; server-stored files (fileId) are
+	 * fetched on demand. Attachments that cannot be loaded are kept as chips —
+	 * the name still shows and the binary can be re-downloaded later.
+	 */
+	private async hydrateRemoteSession(session: ChatSession, store: RemoteChatStore): Promise<void> {
+		let failed = 0;
 		for (const m of session.messages) {
 			if (!m.attachments?.length) continue;
 			const restored: Attachment[] = [];
 			for (const a of m.attachments) {
-				const r = await restoreAttachment(this.app, a);
-				if (r) restored.push(r);
+				if (a.dataUrl || a.text != null) {
+					/* Already carries its data. */
+					restored.push(a);
+					continue;
+				}
+				if (a.savedPath) {
+					const r = await restoreAttachment(this.app, a);
+					if (r) {
+						restored.push(r);
+						continue;
+					}
+					/* Vault copy missing on this device — only a server copy can refill it. */
+					if (!a.fileId) continue;
+				}
+				if (a.fileId) {
+					try {
+						const f = await store.getFile(a.fileId);
+						a.mimeType = f.mime;
+						a.size = f.bytes.byteLength;
+						if (!a.name) a.name = f.name;
+						if (isTextPayload(f.mime, a.name)) a.text = new TextDecoder().decode(f.bytes);
+						else a.dataUrl = `data:${f.mime};base64,${arrayBufferToBase64(f.bytes)}`;
+					} catch {
+						/* Keep the chip; the binary stays on the server until it can be fetched. */
+						a.dataUrl = "";
+						failed++;
+					}
+					restored.push(a);
+					continue;
+				}
+				restored.push(a);
 			}
 			m.attachments = restored.length ? restored : undefined;
 		}
-		await this.showSession(session);
+		if (failed) {
+			new Notice(`${failed} attachment(s) could not be loaded from the server.`, 10000);
+		}
 	}
 
 	startNewChat() {
 		this.loop?.abort();
 		this.session = newSession(this.currentProvider()?.model ?? "");
+		this.serverBaseUpdatedAt = null;
 		this.attachments = [];
 		this.renderAttachments();
 		this.activeSkills = [];
@@ -719,24 +779,11 @@ export class ChatView extends ItemView {
 	 */
 	private async saveAttachmentsToVault(attachments: Attachment[]): Promise<void> {
 		if (!attachments.length) return;
-		const folder = `${chatFolder(this.plugin.settings)}/files`;
-		let cur = "";
-		for (const part of folder.split("/")) {
-			cur = cur ? `${cur}/${part}` : part;
-			if (!this.app.vault.getAbstractFileByPath(cur)) {
-				try { await this.app.vault.createFolder(cur); } catch { /* created concurrently */ }
-			}
-		}
 		for (const a of attachments) {
 			if (a.savedPath) continue;
 			try {
-				const base = `${stamp(Date.now())} ${vaultFileName(a.name)}`;
-				let path = `${folder}/${base}`;
-				let n = 2;
-				while (this.app.vault.getAbstractFileByPath(path)) path = `${folder}/${base} (${n++})`;
-				if (a.text != null) await this.app.vault.create(path, a.text);
-				else await this.app.vault.createBinary(path, dataUrlToBuffer(a.dataUrl));
-				a.savedPath = path;
+				const content = a.text != null ? a.text : dataUrlToBuffer(a.dataUrl);
+				a.savedPath = await this.writeVaultFile(a.name, content);
 			} catch (e) {
 				new Notice(
 					"Vault Agent: could not save " + a.name + " to the vault — " +
@@ -745,6 +792,26 @@ export class ChatView extends ItemView {
 				);
 			}
 		}
+	}
+
+	/** Write an attachment (text or raw bytes) into the chat files folder under a
+	 * stamped, collision-suffixed name — the one naming scheme every save path shares. */
+	private async writeVaultFile(name: string, content: string | ArrayBuffer): Promise<string> {
+		const folder = `${chatFolder(this.plugin.settings)}/files`;
+		let cur = "";
+		for (const part of folder.split("/")) {
+			cur = cur ? `${cur}/${part}` : part;
+			if (!this.app.vault.getAbstractFileByPath(cur)) {
+				try { await this.app.vault.createFolder(cur); } catch { /* created concurrently */ }
+			}
+		}
+		const base = `${stamp(Date.now())} ${vaultFileName(name)}`;
+		let path = `${folder}/${base}`;
+		let n = 2;
+		while (this.app.vault.getAbstractFileByPath(path)) path = `${folder}/${base} (${n++})`;
+		if (typeof content === "string") await this.app.vault.create(path, content);
+		else await this.app.vault.createBinary(path, content);
+		return path;
 	}
 
 	private renderAttachments() {
@@ -806,7 +873,7 @@ export class ChatView extends ItemView {
 			const gallery = body.createDiv({ cls: "va-msg-images" });
 			for (const a of images) {
 				const img = gallery.createEl("img", { cls: "va-msg-image" }); img.src = a.dataUrl; img.alt = a.name;
-				if (a.savedPath) this.wireFileOpen(img, a.savedPath);
+				if (a.savedPath || a.fileId) this.wireFileOpen(img, a);
 			}
 		}
 		if (files.length) {
@@ -816,21 +883,45 @@ export class ChatView extends ItemView {
 				const ic = chip.createSpan({ cls: "va-file-chip-icon" });
 				setIcon(ic, a.text != null ? "file-text" : "file");
 				chip.createSpan({ cls: "va-file-chip-name", text: a.name });
-				if (a.savedPath) this.wireFileOpen(chip, a.savedPath);
+				if (a.savedPath || a.fileId) this.wireFileOpen(chip, a);
 			}
 		}
 		this.scrollDown();
 		return body;
 	}
 
-	/** Clicking an attachment that lives in the vault opens the real file. */
-	private wireFileOpen(el: HTMLElement, path: string): void {
+	/** Clicking an attachment opens the real file — a vault file directly, a
+	 * server-stored one after a lazy download into the chat files folder. */
+	private wireFileOpen(el: HTMLElement, a: Attachment): void {
 		el.addClass("va-file-link");
-		el.onclick = () => {
-			const file = this.app.vault.getAbstractFileByPath(path);
-			if (file instanceof TFile) void this.app.workspace.getLeaf(false).openFile(file);
-			else new Notice("Vault Agent: file not found — " + path);
+		let fetching = false;
+		el.onclick = async () => {
+			if (fetching) return; /* one download per click, not three */
+			if (a.savedPath) {
+				this.openVaultPath(a.savedPath);
+				return;
+			}
+			if (!a.fileId) return;
+			fetching = true;
+			try {
+				const f = await new RemoteChatStore(this.plugin.settings).getFile(a.fileId);
+				const name = a.name || f.name;
+				a.savedPath = isTextPayload(f.mime, name)
+					? await this.writeVaultFile(name, new TextDecoder().decode(f.bytes))
+					: await this.writeVaultFile(name, f.bytes);
+				this.openVaultPath(a.savedPath);
+			} catch {
+				new Notice("Could not load the file from the server.", 8000);
+			} finally {
+				fetching = false;
+			}
 		};
+	}
+
+	private openVaultPath(path: string): void {
+		const file = this.app.vault.getAbstractFileByPath(path);
+		if (file instanceof TFile) void this.app.workspace.getLeaf(false).openFile(file);
+		else new Notice("Vault Agent: file not found — " + path);
 	}
 
 	private addCopyBtn(container: HTMLElement, text: string) {
@@ -887,8 +978,24 @@ export class ChatView extends ItemView {
 		this.inputEl.value = "";
 		this.inputEl.style.height = "auto";
 
-		/* Attached files become real vault files before the message goes out. */
-		await this.saveAttachmentsToVault(sentAttachments);
+		/* Server-first sessions keep files on the chat server instead of the vault. */
+		const store = new RemoteChatStore(this.plugin.settings);
+		const serverFirst = this.plugin.settings.serverFirst && store.enabled;
+		if (serverFirst) {
+			try {
+				for (const a of sentAttachments) {
+					if (!a.fileId) a.fileId = await store.uploadFile(this.session.id, a);
+				}
+			} catch (e) {
+				/* Upload failed — fall back to vault files so the message still goes out. */
+				const msg = e instanceof Error ? e.message : String(e);
+				new Notice("Server upload failed — saving attachments into the vault instead: " + msg, 10000);
+				await this.saveAttachmentsToVault(sentAttachments);
+			}
+		} else {
+			/* Attached files become real vault files before the message goes out. */
+			await this.saveAttachmentsToVault(sentAttachments);
+		}
 
 		/* User message */
 		const userBody = this.addMessageEl("user", sentAttachments);
@@ -1054,19 +1161,36 @@ export class ChatView extends ItemView {
 			if (accumulated) {
 				this.session.title = this.session.title || deriveTitle(this.session.messages);
 				this.session.updatedAt = Date.now();
-				if (this.plugin.settings.saveChats) {
-					void saveChat(this.app, this.plugin.settings, this.session).catch((e) =>
-						console.warn("[VaultAgent] autosave failed:", e)
-					);
-				}
-				const store = new RemoteChatStore(this.plugin.settings);
-				if (store.enabled) {
-					void store.put(this.session).catch((e) =>
-						new Notice(
-							"Vault Agent: chat not saved to server — " + (e instanceof Error ? e.message : String(e)),
-							8000
-						)
-					);
+				if (serverFirst) {
+					/* Server-first: the server holds the only copy, so never blindly
+					 * overwrite it — a 409 means another device was faster and its
+					 * version wins; this one reloads from the server. */
+					try {
+						await store.put(this.session, this.serverBaseUpdatedAt ?? undefined);
+						this.serverBaseUpdatedAt = this.session.updatedAt;
+					} catch (e) {
+						const msg = e instanceof Error ? e.message : String(e);
+						if (msg.includes("HTTP 409")) {
+							new Notice("Chat was updated on another device — reloading the latest version from the server.", 10000);
+							await this.loadRemoteSession(this.session.id, store);
+						} else {
+							new Notice("Vault Agent: chat not saved to server — " + msg, 8000);
+						}
+					}
+				} else {
+					if (this.plugin.settings.saveChats) {
+						void saveChat(this.app, this.plugin.settings, this.session).catch((e) =>
+							console.warn("[VaultAgent] autosave failed:", e)
+						);
+					}
+					if (store.enabled) {
+						void store.put(this.session).catch((e) =>
+							new Notice(
+								"Vault Agent: chat not saved to server — " + (e instanceof Error ? e.message : String(e)),
+								8000
+							)
+						);
+					}
 				}
 			}
 		} finally {

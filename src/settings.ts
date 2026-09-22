@@ -4,6 +4,7 @@ import {
 	Setting,
 	Notice,
 	DropdownComponent,
+	ToggleComponent,
 	FuzzySuggestModal,
 	TFolder,
 	setIcon,
@@ -146,6 +147,9 @@ export class VaultAgentSettingTab extends PluginSettingTab {
 			);
 
 		if (s.remoteChats) {
+			/* The server-first toggle below depends on the URL; keep a handle so it can track it. */
+			let serverFirstToggle: ToggleComponent | null = null;
+
 			new Setting(containerEl)
 				.setName("Server URL")
 				.setDesc("Base URL of your vault-agent-hub instance, without a trailing slash.")
@@ -156,6 +160,9 @@ export class VaultAgentSettingTab extends PluginSettingTab {
 						.onChange(async (v) => {
 							s.remoteUrl = v.trim();
 							await this.plugin.saveSettings();
+							const ready = !!s.remoteUrl.trim();
+							serverFirstToggle?.setDisabled(!ready);
+							serverFirstToggle?.setValue(ready && s.serverFirst);
 						})
 				);
 
@@ -217,6 +224,21 @@ export class VaultAgentSettingTab extends PluginSettingTab {
 						}
 					})
 				);
+
+			/* Server-first needs a reachable URL; the toggle stays off and disabled until one is set. */
+			const remoteReady = !!s.remoteUrl.trim();
+			new Setting(containerEl)
+				.setName("Server-first sessions")
+				.setDesc(
+					"The whole session — messages and attached files — lives on your server. No chat notes are written to the vault; attachments open by downloading from the server."
+				)
+				.addToggle((t) => {
+					serverFirstToggle = t;
+					t.setValue(remoteReady && s.serverFirst).setDisabled(!remoteReady).onChange(async (v) => {
+						s.serverFirst = v;
+						await this.plugin.saveSettings();
+					});
+				});
 		}
 
 		/* ---------- Memory ---------- */

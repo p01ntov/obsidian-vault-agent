@@ -58,6 +58,8 @@ export interface VaultAgentSettings {
 	remoteChats: boolean;
 	remoteUrl: string;
 	remoteToken: string;
+	/** Server-first sessions: messages and attached files live only on the chat server. */
+	serverFirst: boolean;
 	/** Agent memory: notes it writes to remember things across sessions. */
 	memoryFolder: string;
 	memoryPromptLimit: number;
@@ -95,6 +97,7 @@ export const DEFAULT_SETTINGS: VaultAgentSettings = {
 	remoteChats: false,
 	remoteUrl: "",
 	remoteToken: "",
+	serverFirst: false,
 	memoryFolder: "vault-agent/memory",
 	memoryPromptLimit: 20,
 	skillsFolder: "vault-agent/skills",
@@ -119,6 +122,8 @@ export interface Attachment {
 	text?: string;
 	/** Vault path the file was saved to, so it survives reloads and can be re-read by the model. */
 	savedPath?: string;
+	/** Server-side file id: the binary lives on the chat server, fetched on demand. */
+	fileId?: string;
 }
 
 export interface ChatMessage {

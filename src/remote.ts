@@ -1,12 +1,20 @@
 import { requestUrl, type RequestUrlResponse } from "obsidian";
 import type { ChatSession } from "./history";
 import { describeHttpError } from "./client";
-import type { VaultAgentSettings } from "./types";
+import { newId, type Attachment, type VaultAgentSettings } from "./types";
 
 export interface RemoteChatMeta {
 	id: string;
 	title: string;
 	updatedAt: number;
+}
+
+/** Decode a data URL back to bytes for upload — same as view.ts's dataUrlToBuffer. */
+function dataUrlToBytes(dataUrl: string): ArrayBuffer {
+	const bin = atob(dataUrl.slice(dataUrl.indexOf(",") + 1));
+	const bytes = new Uint8Array(bin.length);
+	for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+	return bytes.buffer;
 }
 
 /** Stores conversations on the user's server (vault-agent-hub). requestUrl keeps it CORS-free on mobile too. */
@@ -23,8 +31,14 @@ export class RemoteChatStore {
 		return this.settings.remoteUrl.trim().replace(/\/+$/, "");
 	}
 
-	private async request(method: "GET" | "PUT" | "DELETE", path: string, body?: string): Promise<RequestUrlResponse> {
-		const headers: Record<string, string> = { "Content-Type": "application/json" };
+	/** extraHeaders override the default Content-Type, which lets file uploads send their own mime. */
+	private async request(
+		method: "GET" | "PUT" | "DELETE",
+		path: string,
+		body?: string | ArrayBuffer,
+		extraHeaders?: Record<string, string>
+	): Promise<RequestUrlResponse> {
+		const headers: Record<string, string> = { "Content-Type": "application/json", ...extraHeaders };
 		const token = this.settings.remoteToken.trim();
 		if (token) headers["Authorization"] = "Bearer " + token;
 
@@ -76,10 +90,11 @@ export class RemoteChatStore {
 		}
 	}
 
-	/** Upsert a session on the server. Attachments that live in the vault go up
-	 * as metadata only — the data is read back from the vault on resume — so
-	 * payloads stay small even with many files. */
-	async put(session: ChatSession): Promise<void> {
+	/** Upsert a session on the server. Attachments that live elsewhere — in the
+	 * vault (savedPath) or on the server itself (fileId) — go up as metadata
+	 * only, so payloads stay small even with many files. When baseUpdatedAt is
+	 * given the server rejects the write (409) if a newer version exists. */
+	async put(session: ChatSession, baseUpdatedAt?: number): Promise<void> {
 		const slim: ChatSession = {
 			...session,
 			messages: session.messages.map((m) =>
@@ -87,15 +102,53 @@ export class RemoteChatStore {
 					? {
 							...m,
 							attachments: m.attachments.map((a) =>
-								a.savedPath
-									? { name: a.name, mimeType: a.mimeType, dataUrl: "", size: a.size, savedPath: a.savedPath }
+								a.savedPath || a.fileId
+									? {
+											name: a.name,
+											mimeType: a.mimeType,
+											dataUrl: "",
+											size: a.size,
+											...(a.savedPath ? { savedPath: a.savedPath } : {}),
+											...(a.fileId ? { fileId: a.fileId } : {}),
+										}
 									: a
 							),
 						}
 					: m
 			),
 		};
-		await this.request("PUT", "/api/chats/" + encodeURIComponent(session.id), JSON.stringify(slim));
+		const headers =
+			baseUpdatedAt != null ? { "X-Base-Updated": String(baseUpdatedAt) } : undefined;
+		await this.request("PUT", "/api/chats/" + encodeURIComponent(session.id), JSON.stringify(slim), headers);
+	}
+
+	/** Upload one attachment's bytes to the server; returns the file id the chat will reference. */
+	async uploadFile(chatId: string, a: Attachment): Promise<string> {
+		const id = newId();
+		const body = a.text != null ? a.text : dataUrlToBytes(a.dataUrl);
+		await this.request("PUT", "/api/files/" + encodeURIComponent(id), body, {
+			"Content-Type": a.mimeType,
+			"X-File-Name": encodeURIComponent(a.name),
+			"X-Chat-Id": chatId,
+		});
+		return id;
+	}
+
+	/** Fetch a stored file's bytes, mime type and original name. */
+	async getFile(id: string): Promise<{ bytes: ArrayBuffer; mime: string; name: string }> {
+		const res = await this.request("GET", "/api/files/" + encodeURIComponent(id));
+		const h = res.headers;
+		const mime = h["content-type"] ?? h["Content-Type"] ?? "application/octet-stream";
+		const raw = h["x-file-name"] ?? h["X-File-Name"] ?? "";
+		let name = id;
+		if (raw) {
+			try {
+				name = decodeURIComponent(raw);
+			} catch {
+				name = raw;
+			}
+		}
+		return { bytes: res.arrayBuffer, mime, name };
 	}
 
 	/** Remove a session from the server. */

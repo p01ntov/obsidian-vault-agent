@@ -106,11 +106,22 @@ function toWire(
 						type: "text",
 						text: `File "${a.name}" is saved in the vault at "${a.savedPath}".`,
 					});
+				} else if (a.fileId) {
+					/* Mirrors the vault-path sentence for files stored on the chat server. */
+					parts.push({
+						type: "text",
+						text: `File "${a.name}" is stored with this conversation on the chat server; its binary contents are not delivered to you in this mode.`,
+					});
 				}
-				if (a.mimeType.startsWith("image/")) {
+				/* An attachment whose bytes never made it back (server fetch failed on
+				 * resume) has an empty dataUrl — gateways reject blank payloads, so
+				 * the path note above is the whole delivery for it. */
+				if (a.mimeType.startsWith("image/") && a.dataUrl) {
 					parts.push({ type: "image_url", image_url: { url: a.dataUrl } });
 				} else if (a.text != null) {
 					parts.push({ type: "text", text: "File \"" + a.name + "\":\n```\n" + a.text + "\n```" });
+				} else if (!a.dataUrl) {
+					/* No bytes to send — nothing to add beyond the note above. */
 				} else if (fileDelivery === "vault") {
 					/* Link-only mode: the path text above is the whole delivery. */
 				} else if (fileDelivery === "image_url") {
